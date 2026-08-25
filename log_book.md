@@ -30,7 +30,7 @@
 ## 2026-08-22
 * Objective: Give Shape to Data that can be extracted from the APIs
 
-## Raw Data Collector
+### Raw Data Collector
 
 The pipeline begins when an upstream collector uploads data to the raw S3 bucket. The collector is deliberately independent from the ETL infrastructure: it calls public APIs, uploads each API response unchanged as `payload.json`, and writes a sibling `metadata.json` with non-secret request details and a SHA-256 checksum.
 
@@ -80,3 +80,7 @@ Validation completed with the repository Python environment:
 ```
 
 The next project stage is the raw-zone processing contract: read these objects from S3, validate and normalize each source schema, quarantine failures, and write refined Parquet datasets for analytical querying.
+
+## 2026-08-28
+* Housekeeping in the repo cleaning, moving and committing files.
+* Wrote an improve README for the current conditon of the project.

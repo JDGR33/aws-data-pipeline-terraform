@@ -24,6 +24,7 @@ OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 
 def parse_arguments() -> argparse.Namespace:
+    """Parse the command-line options used to collect one dataset."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--dataset",
@@ -48,6 +49,12 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def resolve_date_range(arguments: argparse.Namespace) -> tuple[str, str]:
+    """Return the requested inclusive range, or the latest completed 23 hours.
+
+    Backfills must be explicit so a large historical request cannot happen by
+    accident. Incremental runs default to the period from 24 hours ago through
+    the last completed hour.
+    """
     if arguments.start and arguments.end:
         return arguments.start, arguments.end
 
@@ -64,6 +71,7 @@ def resolve_date_range(arguments: argparse.Namespace) -> tuple[str, str]:
 def build_request(
     dataset: str, mode: str, start: str, end: str
 ) -> tuple[str, dict[str, str]]:
+    """Build the API URL and query parameters for a supported dataset."""
     if dataset == "ercot_fuel_type":
         return EIA_FUEL_TYPE_URL, {
             "api_key": required_environment("EIA_API_KEY"),
@@ -98,6 +106,8 @@ def build_request(
             "length": "5000",
         }
 
+    # Open-Meteo uses its archive endpoint for historical backfills and its
+    # forecast endpoint for recent incremental data.
     weather_url = (
         OPEN_METEO_ARCHIVE_URL if mode == "backfill" else OPEN_METEO_FORECAST_URL
     )
@@ -112,6 +122,7 @@ def build_request(
 
 
 def required_environment(name: str) -> str:
+    """Read a required environment variable and fail with a useful message."""
     value = os.getenv(name)
     if not value:
         raise RuntimeError(f"{name} must be set in the environment or .env file")
@@ -119,12 +130,14 @@ def required_environment(name: str) -> str:
 
 
 def fetch_response(url: str, parameters: dict[str, str]) -> requests.Response:
+    """Fetch an API response and raise for HTTP errors."""
     response = requests.get(url, params=parameters, timeout=60)
     response.raise_for_status()
     return response
 
 
 def s3_client(endpoint_url: str | None) -> Any:
+    """Create an S3 client, optionally targeting a local S3-compatible service."""
     return boto3.client(
         "s3",
         endpoint_url=endpoint_url,
@@ -138,6 +151,11 @@ def response_paths(
     collected_at: datetime,
     request_id: str,
 ) -> tuple[str, str]:
+    """Create partitioned object keys for the payload and its metadata.
+
+    Every request gets a UUID directory, so a later collection never
+    overwrites an earlier raw response.
+    """
     prefix = (
         f"source={'eia' if dataset.startswith(('ercot', 'tx_')) else 'open_meteo'}/"
         f"dataset={dataset}/delivery_type={mode}/"
@@ -153,6 +171,7 @@ def response_metadata(
     collected_at: datetime,
     payload_key: str,
 ) -> dict[str, str | dict[str, str] | int]:
+    """Build provenance metadata without storing the EIA API key."""
     payload_hash = hashlib.sha256(response.content).hexdigest()
     return {
         "source_url": url,
@@ -174,6 +193,7 @@ def upload_raw_response(
     metadata: dict[str, str | dict[str, str] | int],
     response: requests.Response,
 ) -> None:
+    """Upload the response bytes and JSON provenance record to S3."""
     client.put_object(
         Bucket=bucket,
         Key=payload_key,
@@ -195,6 +215,7 @@ def write_local_response(
     metadata: dict[str, str | dict[str, str] | int],
     response: requests.Response,
 ) -> tuple[Path, Path]:
+    """Write the response bytes and JSON provenance record under a local root."""
     root = Path(output_directory)
     payload_path = root / payload_key
     metadata_path = root / metadata_key
@@ -205,6 +226,7 @@ def write_local_response(
 
 
 def main() -> None:
+    """Run one collection request and persist its immutable raw result."""
     load_dotenv()
     arguments = parse_arguments()
     if arguments.destination == "s3" and not arguments.bucket:
@@ -212,6 +234,8 @@ def main() -> None:
 
     start, end = resolve_date_range(arguments)
     url, parameters = build_request(arguments.dataset, arguments.mode, start, end)
+    # Keep the original response bytes so the stored payload matches exactly
+    # what the upstream service returned; metadata is generated alongside it.
     response = fetch_response(url, parameters)
     collected_at = datetime.now(UTC)
     payload_key, metadata_key = response_paths(

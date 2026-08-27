@@ -15,6 +15,8 @@ import boto3
 import requests
 from botocore.config import Config
 from dotenv import load_dotenv
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 EIA_FUEL_TYPE_URL = "https://api.eia.gov/v2/electricity/rto/fuel-type-data/data/"
 EIA_REGION_URL = "https://api.eia.gov/v2/electricity/rto/region-data/data/"
@@ -130,8 +132,21 @@ def required_environment(name: str) -> str:
 
 
 def fetch_response(url: str, parameters: dict[str, str]) -> requests.Response:
-    """Fetch an API response and raise for HTTP errors."""
-    response = requests.get(url, params=parameters, timeout=60)
+    """Fetch an API response, retrying transient network and server errors."""
+    retry_policy = Retry(
+        total=4,
+        connect=4,
+        read=4,
+        status=4,
+        backoff_factor=2,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET"}),
+        respect_retry_after_header=True,
+    )
+    session = requests.Session()
+    session.mount("https://", HTTPAdapter(max_retries=retry_policy))
+    session.mount("http://", HTTPAdapter(max_retries=retry_policy))
+    response = session.get(url, params=parameters, timeout=60)
     response.raise_for_status()
     return response
 

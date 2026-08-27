@@ -24,4 +24,6 @@ Build a reliable, serverless data pipeline that turns public Texas energy and en
 
 The repository has its initial Terraform and LocalStack foundation, and the raw-data collector is working for Texas energy and weather datasets. It supports backfill and incremental deliveries, keeps source payloads unchanged, and records collection metadata separately.
 
+To collect the complete June 2026 backfill for all four datasets, run `./collector/backfill_june_2026.sh`. It writes locally by default; set `DESTINATION=s3` and `RAW_BUCKET` to upload to S3 or LocalStack.
+
 The next step is to define the raw-zone processing contract: read delivered objects from S3, validate and normalize each source schema, quarantine failures, and write refined Parquet datasets for analytical querying. Later stages will add quality gates, a serving layer, CI/CD, and deployment documentation.

@@ -81,6 +81,11 @@ Validation completed with the repository Python environment:
 
 The next project stage is the raw-zone processing contract: read these objects from S3, validate and normalize each source schema, quarantine failures, and write refined Parquet datasets for analytical querying.
 
-## 2026-08-28
+## 2026-08-26
 * Housekeeping in the repo cleaning, moving and committing files.
 * Wrote an improve README for the current conditon of the project.
+
+## 2026-08-27
+* Added a Bash script to backfill all four datasets for June 2026.
+* Added retry handling for temporary API and network failures; Open-Meteo collection succeeded.
+* TODO: Eval Preliminary DataSet

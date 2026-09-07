@@ -89,3 +89,11 @@ The next project stage is the raw-zone processing contract: read these objects f
 * Added a Bash script to backfill all four datasets for June 2026.
 * Added retry handling for temporary API and network failures; Open-Meteo collection succeeded.
 * TODO: Eval Preliminary DataSet
+
+## 2026-09-07
+* Evaluated the preliminary June 2026 raw datasets in `collector/data_exploration.ipynb`.
+* Normalized API timestamps, numeric measures, and categorical fields for the EIA forecast, fuel-type, retail-sales, and Open-Meteo data.
+* Added explicit missing-value checks and comments describing each analysis step.
+* Confirmed 720 forecast rows, 5,000 fuel-type rows, six retail-sales rows, and 720 weather rows execute successfully in the notebook.
+* Documented that retail sales cover one month and contain missing measures for the `other` sector.
+* TODO: Finish looking at the Meteo Data.

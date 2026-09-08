@@ -73,4 +73,21 @@ Both scripts accept `PYTHON` to select the Python executable and `LOCAL_OUTPUT_D
 
 The Python script does not combine pages or merge multiple responses. That is why the year backfill script batches by month; downstream processing can later read the individual immutable deliveries as a raw zone.
 
+### First Historical Base CSV Tables
+
+After collecting raw files locally, create the first combined historical base with:
+
+```bash
+.venv/bin/python collector/create_historical_base.py
+```
+
+This writes four independent CSV tables in `data/`:
+
+- [`historical_ercot_demand_forecast.csv`](data/historical_ercot_demand_forecast.csv)
+- [`historical_ercot_fuel_type.csv`](data/historical_ercot_fuel_type.csv)
+- [`historical_tx_retail_sales.csv`](data/historical_tx_retail_sales.csv)
+- [`historical_texas_weather.csv`](data/historical_texas_weather.csv)
+
+The script follows the notebook’s normalization approach, preserves each source schema as its own table, and deduplicates overlapping raw deliveries. It does not join the sources together at this stage. This is an initial analytical base, not yet a production-grade refined dataset.
+
 The next step is to define the raw-zone processing contract: read delivered objects from S3, validate and normalize each source schema, quarantine failures, and write refined Parquet datasets for analytical querying. Later stages will add quality gates, a serving layer, CI/CD, and deployment documentation.

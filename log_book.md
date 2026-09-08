@@ -101,3 +101,4 @@ The next project stage is the raw-zone processing contract: read these objects f
 ## 2026-09-08
 * Added a month-batched 2026 backfill runner for all four datasets.
 * The runner defaults to completed months, pauses between API requests, and supports local or S3 delivery.
+* TODO: Set up LocalStack S3 raw/refined buckets and process the four source tables from S3.

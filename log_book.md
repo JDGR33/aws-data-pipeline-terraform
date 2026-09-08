@@ -97,3 +97,7 @@ The next project stage is the raw-zone processing contract: read these objects f
 * Confirmed 720 forecast rows, 5,000 fuel-type rows, six retail-sales rows, and 720 weather rows execute successfully in the notebook.
 * Documented that retail sales cover one month and contain missing measures for the `other` sector.
 * TODO: Finish looking at the Meteo Data.
+
+## 2026-09-08
+* Added a month-batched 2026 backfill runner for all four datasets.
+* The runner defaults to completed months, pauses between API requests, and supports local or S3 delivery.

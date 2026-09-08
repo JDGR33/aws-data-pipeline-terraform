@@ -49,6 +49,7 @@ terraform.rc
 .venv
 internal_README.md
 data/raw/
+data/*.csv
 
 ## For Terraform
 .terraform/

@@ -101,4 +101,14 @@ The next project stage is the raw-zone processing contract: read these objects f
 ## 2026-09-08
 * Added a month-batched 2026 backfill runner for all four datasets.
 * The runner defaults to completed months, pauses between API requests, and supports local or S3 delivery.
-* TODO: Set up LocalStack S3 raw/refined buckets and process the four source tables from S3.
+
+## 2026-09-10 - Architecture Alignment & Sprint Planning
+* Realigned end-to-end pipeline architecture based on core project objectives:
+  1. **Data Ingestion:** Package the verified Python collector into an AWS Lambda function triggered by EventBridge cron schedules, outputting immutable JSON payloads with checksum metadata to the raw S3 bucket.
+  2. **Local Prototyping:** Standardize local testing with LocalStack. Next immediate environment action is enabling Docker Desktop WSL 2 integration so LocalStack runs offline locally.
+  3. **ETL & Transformation Engine:** Selected AWS Glue (PySpark) to ingest from S3 raw (Bronze), validate schemas, quarantine anomalies, and output partitioned Snappy Parquet to S3 refined (Silver).
+  4. **Analytics & Serving:** AWS Glue Data Catalog + Athena for serverless SQL querying.
+  5. **Terraform Modularization:** Restructure IaC into reusable modules (`modules/kms`, `modules/s3`, `modules/iam`, `modules/lambda`, `modules/glue`) and environment configurations (`envs/dev`, `envs/prod`).
+* Updated `internal_README.md` and `README.md` to reflect the serverless Lambda + S3 + Glue + Athena pipeline architecture.
+* Defined the upcoming Terraform modularization plan (modules/kms, modules/s3, modules/iam) and dual-bucket architecture (Bronze & Silver).
+

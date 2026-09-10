@@ -6,23 +6,44 @@ An evolving data-engineering project focused on collecting and preparing Texas e
 
 Build a reliable, serverless data pipeline that turns public Texas energy and environmental APIs into well-structured, queryable datasets. The project is also a transparent record of learning how to design, provision, test, and document data infrastructure with Terraform.
 
+## Architecture Overview
+
+```text
+  [EIA API / Open-Meteo]
+            │
+            ▼
+    [EventBridge Cron]
+            │
+            ▼
+   [AWS Lambda Ingest]  ──(Raw JSON + Checksum Metadata)──▶ [S3 Raw Bucket (Bronze)]
+                                                                    │
+                                                                    ▼
+                                                          [AWS Glue Job (PySpark)]
+                                                                    │
+                                                          (Partitioned Parquet)
+                                                                    ▼
+                                                        [S3 Refined Bucket (Silver)]
+                                                                    │
+                                                                    ▼
+                                                        [Glue Catalog / Athena]
+```
+
 ## Abilities I Want to Show
 
-- Infrastructure as Code with Terraform, developed locally with LocalStack and designed for AWS.
-- Python data collection from public APIs, including EIA ERCOT data and Open-Meteo weather data.
-- Data engineering practices such as schema validation, quality checks, partitioning, and Parquet-based analytical storage.
-- Clear engineering documentation and a public record of the project's progress in [`log_book.md`](log_book.md).
-
-## What This Project Is Not
-
-- It is not a finished production platform.
-- It is not a general-purpose data ingestion service.
-- It does not yet provide a complete transformation, serving, or CI/CD layer.
-- It does not store API secrets in the repository or treat local development as a substitute for production security and operations.
+- **Modular Infrastructure as Code:** Reusable Terraform modules (`modules/kms`, `modules/s3`, `modules/iam`, `modules/lambda`, `modules/glue`), tested locally with LocalStack and deployed to AWS.
+- **Serverless Data Ingestion:** Python AWS Lambda triggered by EventBridge cron to fetch from EIA and Open-Meteo APIs, writing immutable payloads and checksum metadata.
+- **Distributed Transformation:** AWS Glue (PySpark) to ingest JSON, validate schemas, quarantine corrupt records, and write partitioned Parquet datasets.
+- **Analytical Serving Layer:** AWS Glue Data Catalog tables queried with serverless AWS Athena.
+- **Clear Engineering Practices:** Complete transparency through [`log_book.md`](log_book.md) and [`internal_README.md`](internal_README.md).
 
 ## Current State and Next Steps
 
-The repository has its initial Terraform and LocalStack foundation, and the raw-data collector is working for Texas energy and weather datasets. It supports backfill and incremental deliveries, keeps source payloads unchanged, and records collection metadata separately.
+The repository has verified the data collection layer locally and defined the historical baseline CSV tables. Current active priorities:
+1. **LocalStack Setup:** Ensure Docker Desktop WSL 2 integration is enabled to run LocalStack for local AWS emulation.
+2. **Terraform Modularization:** Refactor base infrastructure into `modules/kms`, `modules/s3`, and `modules/iam` with environments under `envs/dev`.
+3. **Lambda Ingestion Packaging:** Package [`collector/collect_raw_data.py`](collector/collect_raw_data.py) into a Lambda handler.
+4. **AWS Glue ETL:** Develop the PySpark transformation job to write partitioned Parquet files to the S3 Refined bucket.
+
 
 ## Collector Scripts
 
@@ -90,4 +111,4 @@ This writes four independent CSV tables in `data/`:
 
 The script follows the notebook’s normalization approach, preserves each source schema as its own table, and deduplicates overlapping raw deliveries. It does not join the sources together at this stage. This is an initial analytical base, not yet a production-grade refined dataset.
 
-The next step is to define the raw-zone processing contract: read delivered objects from S3, validate and normalize each source schema, quarantine failures, and write refined Parquet datasets for analytical querying. Later stages will add quality gates, a serving layer, CI/CD, and deployment documentation.
+The next step is to define the raw-zone processing contract using AWS Glue (PySpark): read delivered JSON objects from the raw S3 bucket, validate and normalize each source schema, quarantine failures, and write partitioned Snappy Parquet datasets to the refined S3 bucket, followed by Glue Data Catalog registration for Athena querying.

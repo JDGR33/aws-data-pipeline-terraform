@@ -111,4 +111,9 @@ The next project stage is the raw-zone processing contract: read these objects f
   5. **Terraform Modularization:** Restructure IaC into reusable modules (`modules/kms`, `modules/s3`, `modules/iam`, `modules/lambda`, `modules/glue`) and environment configurations (`envs/dev`, `envs/prod`).
 * Updated `internal_README.md` and `README.md` to reflect the serverless Lambda + S3 + Glue + Athena pipeline architecture.
 * Defined the upcoming Terraform modularization plan (modules/kms, modules/s3, modules/iam) and dual-bucket architecture (Bronze & Silver).
+* Documented LocalStack operations and operational hygiene:
+  * Health verification (`lstk status`, `curl http://localhost:4566/_localstack/health | jq .`), Docker container state, and GUI resource inspection via LocalStack Web App (`app.localstack.cloud`).
+  * Emulation concepts (edge gateway port 4566, dummy credentials, CLI/Terraform shims `lstk aws` and `tflocal`).
+  * State lifecycle: running ephemeral in-memory by default, reversing `--persist` via `lstk volume clear --force`, and quick in-memory resets with `lstk reset --force`.
+* TODO: Start writing basic Terraform files (`modules/kms`, `modules/s3`, `modules/iam`, and `envs/dev/main.tf`).
 

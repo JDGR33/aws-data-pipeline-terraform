@@ -39,11 +39,42 @@ Build a reliable, serverless data pipeline that turns public Texas energy and en
 ## Current State and Next Steps
 
 The repository has verified the data collection layer locally and defined the historical baseline CSV tables. Current active priorities:
-1. **LocalStack Setup:** Ensure Docker Desktop WSL 2 integration is enabled to run LocalStack for local AWS emulation.
-2. **Terraform Modularization:** Refactor base infrastructure into `modules/kms`, `modules/s3`, and `modules/iam` with environments under `envs/dev`.
-3. **Lambda Ingestion Packaging:** Package [`collector/collect_raw_data.py`](collector/collect_raw_data.py) into a Lambda handler.
-4. **AWS Glue ETL:** Develop the PySpark transformation job to write partitioned Parquet files to the S3 Refined bucket.
+1. **Terraform Modularization (Active TODO):** Start writing basic Terraform files (`modules/kms`, `modules/s3`, `modules/iam`) and configure `envs/dev` against LocalStack.
+2. **Lambda Ingestion Packaging:** Package [`collector/collect_raw_data.py`](collector/collect_raw_data.py) into a Lambda handler.
+3. **AWS Glue ETL:** Develop the PySpark transformation job to write partitioned Parquet files to the S3 Refined bucket.
+4. **Athena Serving Layer:** Provision Glue Data Catalog databases and external tables for analytical querying.
 
+## Local Development with LocalStack
+
+Base AWS services (S3, KMS, IAM, Lambda) are emulated locally via LocalStack to iterate rapidly without cloud costs or live AWS credentials.
+
+### Verification and Status
+* **Check Status:** Run `lstk status` to verify emulator health and inspect deployed mock resources.
+* **Health Check Endpoint:** Query the unified port `4566`:
+  ```bash
+  curl -s http://localhost:4566/_localstack/health | jq .
+  ```
+* **Resource Inspection:**
+  * **CLI:** Use `lstk aws <service> <command>` (e.g., `lstk aws s3 ls`, `lstk aws kms list-keys`).
+  * **Web Resource Browser:** Open [https://app.localstack.cloud](https://app.localstack.cloud) in your browser to visually explore local buckets and resources via `http://localhost:4566`.
+  * **Terraform State:** Run `.venv/bin/tflocal state list` to inspect resources provisioned by Terraform.
+
+### State Management & Hygiene
+* **Ephemeral by Default:** Run `lstk start` without `--persist`. State is kept in-memory and discarded on `lstk stop`, ensuring a clean slate across runs.
+* **Clearing Persisted Data:** If started previously with `--persist`, purge the saved volume on disk using:
+  ```bash
+  lstk stop
+  lstk volume clear --force
+  lstk start
+  ```
+* **Instant In-Memory Reset:** Wipe all created resources without restarting the container:
+  ```bash
+  lstk reset --force
+  ```
+
+### Tooling Wrappers
+* **AWS CLI:** Run `lstk aws <command>` or pass `--endpoint-url=http://localhost:4566` to `aws`.
+* **Terraform:** Run `.venv/bin/tflocal` (`tflocal init`, `tflocal plan`, `tflocal apply`) to automatically route AWS provider calls to `http://localhost:4566` with dummy credentials.
 
 ## Collector Scripts
 

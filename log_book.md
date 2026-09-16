@@ -117,3 +117,23 @@ The next project stage is the raw-zone processing contract: read these objects f
   * State lifecycle: running ephemeral in-memory by default, reversing `--persist` via `lstk volume clear --force`, and quick in-memory resets with `lstk reset --force`.
 * TODO: Start writing basic Terraform files (`modules/kms`, `modules/s3`, `modules/iam`, and `envs/dev/main.tf`).
 
+## 2026-09-15 - Terraform Modularization & KMS Module Implementation
+* **Terraform IaC Restructuring:**
+  * Retired the monolithic prototype root `main.tf` in favor of an environment-driven structure (`envs/dev`) and reusable child modules (`modules/`).
+* **KMS Module (`modules/kms`):**
+  * Created reusable module defining customer-managed KMS key (`aws_kms_key`) and alias (`aws_kms_alias`).
+  * Implemented security defaults: automatic key rotation enabled (`enable_key_rotation = true`) and configurable deletion window (7–30 days) with variable input validation.
+  * Added alias naming validation enforcing the `alias/` prefix.
+  * Exported `key_arn`, `key_id`, `alias_arn`, and `alias_name`.
+* **Dev Environment Setup (`envs/dev`):**
+  * Configured `providers.tf` targeting LocalStack on `http://localhost:4566` across core services (`kms`, `s3`, `iam`, `lambda`, `cloudwatch`, `glue`, `sts`).
+  * Added `versions.tf` specifying required Terraform version (`>= 1.5.0`) and AWS provider (`>= 5.0`).
+  * Defined parameterized `variables.tf` and environment inputs for region, environment (`dev`), and project naming (`texas-data-pipeline`).
+  * Instantiated the KMS module in `envs/dev/main.tf` with standardized project and environment resource tagging.
+  * Exposed module outputs via `envs/dev/outputs.tf`.
+* **Verification & LocalStack Deployment:**
+  * Initialized Terraform environment (`terraform init`), validated syntax and configurations (`terraform validate`).
+  * Verified execution plan (`terraform plan`) and successfully provisioned resources against running LocalStack via `terraform apply`.
+* **TODO:** Implement the S3 module (`modules/s3`) with encryption referencing the KMS module outputs for Bronze (raw) and Silver (refined) buckets.
+
+

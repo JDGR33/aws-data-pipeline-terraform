@@ -136,4 +136,30 @@ The next project stage is the raw-zone processing contract: read these objects f
   * Verified execution plan (`terraform plan`) and successfully provisioned resources against running LocalStack via `terraform apply`.
 * **TODO:** Implement the S3 module (`modules/s3`) with encryption referencing the KMS module outputs for Bronze (raw) and Silver (refined) buckets.
 
+## 2026-09-16
+* Committed Terraform modularization structure and KMS module.
+* Created S3 child module (`modules/s3`):
+  * `variables.tf`: defined bucket naming regex, mandatory KMS ARN, versioning status validation, and `force_destroy`.
+  * `main.tf`: configured bucket with SSE-KMS encryption, versioning, `BucketOwnerEnforced`, and public access block.
+* TODO: Complete `modules/s3/outputs.tf`, instantiate raw and refined buckets in `envs/dev/main.tf`, and test in LocalStack.
+
+## 2026-09-17 - S3 Child Module Completion, LocalStack DNS Troubleshooting, & Dual-Bucket Provisioning
+* **Completed S3 Child Module (`modules/s3`):**
+  * Created `outputs.tf` exposing bucket attributes: `bucket_id`, `bucket_arn`, `bucket_regional_domain_name`, and `s3_uri`.
+  * Fixed syntax typo in `modules/kms/main.tf`.
+* **Dual-Layer Architecture Provisioning (`envs/dev`):**
+  * Instantiated Bronze (`s3_bronze` -> `texas-data-pipeline-dev-bronze`) and Silver (`s3_silver` -> `texas-data-pipeline-dev-silver`) buckets in `envs/dev/main.tf`.
+  * Secured both layers with customer-managed KMS encryption (`modules/kms`), enforced ownership controls (`BucketOwnerEnforced`), blocked public access, enabled versioning, and tagged layers explicitly.
+  * Exposed Bronze and Silver bucket IDs and ARNs via `envs/dev/outputs.tf`.
+  * Initialized and registered the new module definitions in Terraform (`terraform init`).
+  * Deployed infrastructure via `terraform apply` and verified resources in LocalStack using `lstk aws s3 ls`.
+* **Engineering Deep-Dive & Lessons Learned: LocalStack S3 & Virtual-Hosted vs. Path-Style DNS Resolution:**
+  * **The Problem:** During initial `terraform apply` for S3 bucket creation, Terraform failed with:
+    `Error: creating S3 Bucket (...): dial tcp: lookup texas-data-pipeline-dev-raw.localhost on 10.255.255.254:53: no such host`.
+  * **Root Cause:** By default, AWS SDKs and the Terraform AWS provider use **virtual-hosted-style** addressing for S3 endpoints (`<bucket-name>.<endpoint>`). When configured with `endpoint = "http://localhost:4566"`, Terraform formulated bucket URLs as `http://<bucket-name>.localhost:4566/`. While modern specifications treat `*.localhost` as loopback domains, local network and OS DNS resolvers (especially inside WSL 2 or custom system resolvers like `10.255.255.254:53`) do not support wildcard subdomains of `localhost`. Consequently, the DNS lookup fails before the request ever reaches port 4566.
+  * **The Solution:** Added `s3_use_path_style = true` inside the `provider "aws"` block in `envs/dev/providers.tf`. This instructs the AWS client to format S3 requests using **path-style** addressing (`http://localhost:4566/<bucket-name>`). The DNS query evaluates strictly to `localhost` (resolving immediately to `127.0.0.1`), allowing LocalStack's edge proxy to route the request properly without custom `/etc/hosts` DNS overrides.
+  * **Module Indexing Gotcha:** When adding new module calls (`module "s3_silver"`), Terraform references an internal manifest (`.terraform/modules/modules.json`). Even for local paths, `terraform init` (or `terraform get`) must be executed to register new module blocks before `terraform plan` or `terraform apply`.
+* **TODO:** Package Python ingestion collector (`collector/collect_raw_data.py`) into an AWS Lambda function with EventBridge scheduled triggers.
+
+
 

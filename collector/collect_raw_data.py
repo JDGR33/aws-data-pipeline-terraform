@@ -24,6 +24,13 @@ EIA_RETAIL_SALES_URL = "https://api.eia.gov/v2/electricity/retail-sales/data/"
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
+SUPPORTED_DATASETS = (
+    "ercot_fuel_type",
+    "ercot_demand_forecast",
+    "tx_retail_sales",
+    "texas_weather",
+)
+
 
 def parse_arguments() -> argparse.Namespace:
     """Parse the command-line options used to collect one dataset."""
@@ -31,12 +38,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--dataset",
         required=True,
-        choices=(
-            "ercot_fuel_type",
-            "ercot_demand_forecast",
-            "tx_retail_sales",
-            "texas_weather",
-        ),
+        choices=SUPPORTED_DATASETS,
     )
     parser.add_argument("--mode", required=True, choices=("backfill", "incremental"))
     parser.add_argument(
@@ -50,18 +52,29 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def resolve_date_range(arguments: argparse.Namespace) -> tuple[str, str]:
+def resolve_date_range(
+    mode_or_arguments: str | argparse.Namespace,
+    start: str | None = None,
+    end: str | None = None,
+) -> tuple[str, str]:
     """Return the requested inclusive range, or the latest completed 23 hours.
 
     Backfills must be explicit so a large historical request cannot happen by
     accident. Incremental runs default to the period from 24 hours ago through
     the last completed hour.
     """
-    if arguments.start and arguments.end:
-        return arguments.start, arguments.end
+    if isinstance(mode_or_arguments, argparse.Namespace):
+        mode = mode_or_arguments.mode
+        start = mode_or_arguments.start
+        end = mode_or_arguments.end
+    else:
+        mode = mode_or_arguments
 
-    if arguments.mode == "backfill":
-        raise ValueError("--start and --end are required when --mode is backfill")
+    if start and end:
+        return start, end
+
+    if mode == "backfill":
+        raise ValueError("start and end are required when mode is backfill")
 
     now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     return (
@@ -240,24 +253,46 @@ def write_local_response(
     return payload_path, metadata_path
 
 
-def main() -> None:
-    """Run one collection request and persist its immutable raw result."""
-    load_dotenv()
-    arguments = parse_arguments()
-    if arguments.destination == "s3" and not arguments.bucket:
-        raise RuntimeError("--bucket or RAW_BUCKET is required")
+def collect_dataset(
+    dataset: str,
+    mode: str,
+    start: str | None = None,
+    end: str | None = None,
+    destination: str = "local",
+    local_output_dir: str = "data/raw",
+    bucket: str | None = None,
+    s3_endpoint_url: str | None = None,
+) -> dict[str, Any]:
+    """Run one collection request and persist its immutable raw result.
 
-    start, end = resolve_date_range(arguments)
-    url, parameters = build_request(arguments.dataset, arguments.mode, start, end)
+    Returns execution summary and paths/keys of written artifacts.
+    """
+    if dataset not in SUPPORTED_DATASETS:
+        raise ValueError(
+            f"Unsupported dataset '{dataset}'. Must be one of {SUPPORTED_DATASETS}"
+        )
+    if destination not in ("local", "s3"):
+        raise ValueError(f"Destination must be 'local' or 's3'; got '{destination}'")
+
+    if destination == "s3":
+        bucket = bucket or os.getenv("RAW_BUCKET")
+        if not bucket:
+            raise RuntimeError("bucket or RAW_BUCKET is required when destination is s3")
+        s3_endpoint_url = s3_endpoint_url or os.getenv("S3_ENDPOINT_URL")
+
+    resolved_start, resolved_end = resolve_date_range(mode, start, end)
+    url, parameters = build_request(dataset, mode, resolved_start, resolved_end)
+
     # Keep the original response bytes so the stored payload matches exactly
     # what the upstream service returned; metadata is generated alongside it.
     response = fetch_response(url, parameters)
     collected_at = datetime.now(UTC)
+    request_id = str(uuid.uuid4())
     payload_key, metadata_key = response_paths(
-        arguments.dataset,
-        arguments.mode,
+        dataset,
+        mode,
         collected_at,
-        str(uuid.uuid4()),
+        request_id,
     )
     metadata = response_metadata(
         url,
@@ -266,24 +301,70 @@ def main() -> None:
         collected_at,
         payload_key,
     )
-    if arguments.destination == "local":
-        payload_path, metadata_path = write_local_response(
-            arguments.local_output_dir, payload_key, metadata_key, metadata, response
-        )
-        print(f"Wrote {payload_path}")
-        print(f"Wrote {metadata_path}")
-        return
 
+    if destination == "local":
+        payload_path, metadata_path = write_local_response(
+            local_output_dir, payload_key, metadata_key, metadata, response
+        )
+        return {
+            "dataset": dataset,
+            "mode": mode,
+            "status": "success",
+            "destination": "local",
+            "start": resolved_start,
+            "end": resolved_end,
+            "request_id": request_id,
+            "payload_path": str(payload_path),
+            "metadata_path": str(metadata_path),
+            "bytes": len(response.content),
+            "http_status": response.status_code,
+        }
+
+    client = s3_client(s3_endpoint_url)
     upload_raw_response(
-        s3_client(arguments.s3_endpoint_url),
-        arguments.bucket,
+        client,
+        bucket,
         payload_key,
         metadata_key,
         metadata,
         response,
     )
-    print(f"Uploaded s3://{arguments.bucket}/{payload_key}")
-    print(f"Uploaded s3://{arguments.bucket}/{metadata_key}")
+    return {
+        "dataset": dataset,
+        "mode": mode,
+        "status": "success",
+        "destination": "s3",
+        "start": resolved_start,
+        "end": resolved_end,
+        "request_id": request_id,
+        "bucket": bucket,
+        "payload_key": payload_key,
+        "metadata_key": metadata_key,
+        "bytes": len(response.content),
+        "http_status": response.status_code,
+    }
+
+
+def main() -> None:
+    """Run one collection request and persist its immutable raw result."""
+    load_dotenv()
+    arguments = parse_arguments()
+    result = collect_dataset(
+        dataset=arguments.dataset,
+        mode=arguments.mode,
+        start=arguments.start,
+        end=arguments.end,
+        destination=arguments.destination,
+        local_output_dir=arguments.local_output_dir,
+        bucket=arguments.bucket,
+        s3_endpoint_url=arguments.s3_endpoint_url,
+    )
+    if result["destination"] == "local":
+        print(f"Wrote {result['payload_path']}")
+        print(f"Wrote {result['metadata_path']}")
+    else:
+        print(f"Uploaded s3://{result['bucket']}/{result['payload_key']}")
+        print(f"Uploaded s3://{result['bucket']}/{result['metadata_key']}")
 
 
 if __name__ == "__main__":

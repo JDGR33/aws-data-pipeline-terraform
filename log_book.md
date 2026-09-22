@@ -161,5 +161,47 @@ The next project stage is the raw-zone processing contract: read these objects f
   * **Module Indexing Gotcha:** When adding new module calls (`module "s3_silver"`), Terraform references an internal manifest (`.terraform/modules/modules.json`). Even for local paths, `terraform init` (or `terraform get`) must be executed to register new module blocks before `terraform plan` or `terraform apply`.
 * **TODO:** Package Python ingestion collector (`collector/collect_raw_data.py`) into an AWS Lambda function with EventBridge scheduled triggers.
 
+## 2026-09-19 - Python Lambda Refactoring, Packaging Pipeline, & Serverless Best Practices
+* **Refactored Ingestion Collector (`collector/collect_raw_data.py`):**
+  * Decoupled collection logic from CLI `argparse` by extracting `collect_dataset()`, returning structured provenance and upload metrics (`dataset`, `status`, `bytes`, `payload_key`, `metadata_key`).
+  * Updated `resolve_date_range()` to flexibly handle both programmatic string arguments and `argparse.Namespace` objects, preserving 100% backward compatibility for existing backfill scripts (`backfill_june_2026.sh`, `backfill_year_2026.sh`).
+* **Created AWS Lambda Handler (`collector/lambda_handler.py`):**
+  * Implemented standard entry point `lambda_handler(event, context)` supporting flexible invocation modes:
+    * Single dataset invocation (e.g. `{"dataset": "texas_weather", "mode": "incremental"}`).
+    * Multi-dataset batch invocation (e.g. `{"datasets": ["ercot_fuel_type", "ercot_demand_forecast"]}`).
+    * Default cron invocation: automatically iterates over all supported project datasets when triggered by EventBridge scheduled rules with an empty payload.
+  * Runtime configuration injected via environment variables (`RAW_BUCKET`, `DESTINATION`, `S3_ENDPOINT_URL`, `EIA_API_KEY`).
+  * Implemented structured CloudWatch logging and exception propagation: unhandled failures raise `RuntimeError` to ensure AWS Lambda invocation metrics, EventBridge retries, and dead-letter queues (DLQs) trigger properly.
+* **Automated Packaging Pipeline (`scripts/package_lambda.py`, `scripts/package_lambda.sh`):**
+  * Created `collector/lambda_requirements.txt` isolating third-party runtime dependencies (`requests`, `python-dotenv`) while deliberately omitting `boto3`/`botocore` (which are pre-installed in the AWS Lambda runtime).
+  * Built portable Python packaging script utilizing Python's built-in `zipfile` module (eliminating dependency on host-level `zip` binary).
+  * Implemented vendor isolation via `pip install --target build/lambda`, stripping `__pycache__` and `*.pyc` files, and generating a lean 0.66 MB deployment artifact (`dist/collector_lambda.zip`).
+  * Added `--skip-pip` flag enabling rapid sub-second re-packaging during local code iteration.
+  * Updated `.gitignore` to exclude `build/`, `dist/`, and `*.zip`.
+* **Automated Testing Suite (`tests/test_collector.py`):**
+  * Added 10 automated unit tests covering date resolution, CLI/programmatic compatibility, input validation, S3 error scenarios, single/multi-dataset batching, and error propagation.
+  * Verified 10/10 tests passing via `python -m unittest discover -s tests`.
+* **Engineering Deep-Dive & Lessons Learned: Working with Python in AWS Lambda:**
+  * **Handler Anatomy & Invocation Contract:**
+    * Entry point format: AWS maps functions using `<file_name>.<function_name>` (e.g., `lambda_handler.lambda_handler`).
+    * `event` parameter: A Python dictionary containing the invocation payload. Its schema is defined by the trigger source (custom JSON for EventBridge rules, S3 bucket/object metadata for S3 triggers, HTTP request envelopes for API Gateway).
+    * `context` parameter: An AWS runtime object providing execution metadata, including `context.get_remaining_time_in_millis()` (time left before function timeout) and `context.aws_request_id` (unique invocation ID for log correlation).
+  * **Statelessness & Ephemeral Disk Storage:**
+    * Lambda containers are ephemeral and stateless. The filesystem is read-only except for `/tmp` (512 MB to 10 GB), which is purged when the execution environment is decommissioned.
+    * Persistent pipeline artifacts must always be written to external storage (S3 Bronze layer) rather than local disk.
+  * **Optimizing Cold Starts vs. Warm Starts (Global Scope):**
+    * Code outside `lambda_handler()` executes once during container initialization ("cold start").
+    * Heavy objects (e.g., `boto3.client("s3")`, HTTP session pools, database connections) should always be initialized in the global scope so they are cached and reused across subsequent "warm" invocations.
+  * **Packaging Mechanics & Flat-Root Vendoring:**
+    * AWS Lambda does not activate virtual environments (`.venv`). It executes against `/var/task/`.
+    * All third-party packages must sit directly at the root of the `.zip` archive alongside handler files (or inside a Lambda Layer).
+    * Pre-installed dependencies: AWS provides `boto3` and `botocore` out of the box. Omitting them from the package bundle reduced our zip size from ~40 MB to 0.66 MB, slashing cold-start download and initialization time.
+  * **Deterministic Checksumming for Terraform (`source_code_hash`):**
+    * Terraform detects Lambda code modifications using cryptographic file hashes (`filebase64sha256`).
+    * Without updating this hash, Terraform's state assumes the function is up to date and skips deployment even if local files changed. The packaging pipeline computes SHA-256 hashes to guarantee clean Terraform drift detection.
+  * **Error Handling Strategy (Async vs. Sync):**
+    * For asynchronous triggers (EventBridge cron, S3 notifications), handlers must never silently catch and swallow errors. Raising an exception instructs AWS Lambda to record the invocation as failed, increment CloudWatch Error metrics, and trigger EventBridge retries / Dead Letter Queues (DLQs).
+* **TODO:** Implement Terraform IAM execution role (`modules/iam`), Lambda function module (`modules/lambda`), and EventBridge scheduled rule (`modules/eventbridge`), then verify deployment against LocalStack.
+
 
 

@@ -203,5 +203,22 @@ The next project stage is the raw-zone processing contract: read these objects f
     * For asynchronous triggers (EventBridge cron, S3 notifications), handlers must never silently catch and swallow errors. Raising an exception instructs AWS Lambda to record the invocation as failed, increment CloudWatch Error metrics, and trigger EventBridge retries / Dead Letter Queues (DLQs).
 * **TODO:** Implement Terraform IAM execution role (`modules/iam`), Lambda function module (`modules/lambda`), and EventBridge scheduled rule (`modules/eventbridge`), then verify deployment against LocalStack.
 
+## 2026-09-22 - IAM Child Module Implementation & Least-Privilege Policy Architecture
+* **Created IAM Child Module (`modules/iam`):**
+  * `variables.tf`: Defined inputs for `role_name`, `description`, `s3_bucket_arn`, `kms_key_arn`, and resource `tags`.
+  * `main.tf`: Configured 3-tier IAM structure:
+    1. `aws_iam_role.this`: Identity definition with `assume_role_policy` granting trust strictly to `lambda.amazonaws.com`.
+    2. `aws_iam_role_policy_attachment.lambda_basic_execution`: Attached AWS managed policy `AWSLambdaBasicExecutionRole` for CloudWatch Logs permissions.
+    3. `aws_iam_role_policy.collector_permissions`: Custom inline policy scoped strictly to least-privilege actions:
+       * S3 write permissions (`s3:PutObject`, `s3:AbortMultipartUpload`) scoped strictly to `${var.s3_bucket_arn}/*`.
+       * KMS encryption permissions (`kms:Encrypt`, `kms:GenerateDataKey`) scoped strictly to `var.kms_key_arn`.
+  * `outputs.tf`: Exposed `role_arn` and `role_name` for downstream module consumption.
+* **Engineering Deep-Dive & Lessons Learned: IAM Execution Policies & Encryption Mechanics:**
+  * **Envelope Encryption & `kms:GenerateDataKey`:** KMS master keys cannot directly encrypt large data files (maximum 4 KB). Instead, S3 uses envelope encryption: S3 invokes KMS on behalf of the calling role to generate a one-time plaintext/ciphertext Data Encryption Key (DEK). If an IAM role only has `kms:Encrypt` and lacks `kms:GenerateDataKey`, S3 PUT operations will fail with `AccessDenied`.
+  * **Orphaned Upload Prevention & `s3:AbortMultipartUpload`:** AWS SDKs (`boto3`) chunk larger files or streams via S3 Multipart Uploads. If a Lambda execution times out or errors mid-stream, `boto3` attempts to abort the multipart upload. Without `s3:AbortMultipartUpload`, stranded, incomplete chunks remain invisibly in S3 and accumulate ongoing storage billing.
+  * **HCL Function Pitfall (`jsonencode` vs. `jsondecode`):** In Terraform HCL, IAM policy documents expect valid JSON strings. Using `jsonencode({...})` serializes the HCL object map into a valid JSON string at compile time. Conversely, `jsondecode()` parses an incoming JSON string into an HCL object, which causes a type mismatch (`string required, but have object`) if called on an HCL block.
+* **TODO:** Implement Lambda child module (`modules/lambda`), configure EventBridge scheduled trigger, wire modules into `envs/dev/main.tf`, and verify deployment in LocalStack.
+
+
 
 

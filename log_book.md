@@ -219,6 +219,17 @@ The next project stage is the raw-zone processing contract: read these objects f
   * **HCL Function Pitfall (`jsonencode` vs. `jsondecode`):** In Terraform HCL, IAM policy documents expect valid JSON strings. Using `jsonencode({...})` serializes the HCL object map into a valid JSON string at compile time. Conversely, `jsondecode()` parses an incoming JSON string into an HCL object, which causes a type mismatch (`string required, but have object`) if called on an HCL block.
 * **TODO:** Implement Lambda child module (`modules/lambda`), configure EventBridge scheduled trigger, wire modules into `envs/dev/main.tf`, and verify deployment in LocalStack.
 
-
-
-
+## 2026-09-24 - Lambda Child Module Implementation & CloudWatch Retention
+* **Created Lambda Child Module (`modules/lambda`):**
+  * `variables.tf`: Defined parameterized inputs for `function_name`, `description`, `role_arn`, `handler`, `runtime`, `timeout`, `memory_size`, `package_path`, `environment_variables`, `log_retention_in_days`, and resource `tags` with strict HCL validation blocks for naming syntax, Python runtimes (`python3.10`–`python3.12`), execution timeout bounds (1–900s), memory limits (128–10240 MB), and CloudWatch retention windows.
+  * `main.tf`:
+    * Configured explicit `aws_cloudwatch_log_group.this` (`/aws/lambda/${var.function_name}`) with configurable retention (`retention_in_days`) ensuring log hygiene and automated deletion upon stack teardown.
+    * Configured `aws_lambda_function.this` with `depends_on = [aws_cloudwatch_log_group.this]` to guarantee the log group exists before Lambda initializes its log streams (preventing AWS from auto-creating a default log group with indefinite retention).
+    * Integrated cryptographic file hashing via `source_code_hash = filebase64sha256(var.package_path)` for automated Terraform drift and code modification detection.
+    * Employed HCL dynamic block `dynamic "environment"` to cleanly inject runtime environment variables when provided without generating empty schema blocks.
+  * `outputs.tf`: Exposed `function_arn`, `function_name`, `invoke_arn`, `log_group_name`, and `log_group_arn` for downstream consumption by EventBridge triggers and monitoring modules.
+* **Engineering Deep-Dive & Lessons Learned: Terraform Lambda Architecture & CloudWatch Management:**
+  * **Explicit vs. Implicit CloudWatch Log Group Management:** If a CloudWatch Log Group is not defined in Terraform, AWS Lambda automatically provisions `/aws/lambda/<function_name>` on first invocation with **infinite retention** (`Never Expire`). Over months of high-frequency cron pipelines, this silently inflates CloudWatch log storage costs. Managing the log group explicitly in Terraform enforces retention limits and ensures `terraform destroy` cleanly removes log data without orphaned resources.
+  * **Module Output Coupling Pitfalls:** Lambda outputs must reference the function resource (`aws_lambda_function.this.arn`), not the associated log group. Referencing the wrong ARN causes silent downstream failures when provisioning invocation triggers (e.g., EventBridge target or IAM permissions).
+  * **Dynamic Environment Blocks:** Using `dynamic "environment"` with conditional `for_each = length(keys(var.environment_variables)) > 0 ? [var.environment_variables] : []` allows the module to be reused across functions with or without environment variables without violating provider schema contracts.
+* **TODO:** Wire `modules/iam` and `modules/lambda` into `envs/dev/main.tf`, configure EventBridge scheduled trigger (`modules/eventbridge`), and verify end-to-end invocation in LocalStack.

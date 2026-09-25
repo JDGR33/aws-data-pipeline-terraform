@@ -8,12 +8,13 @@ provider "aws" {
   s3_use_path_style           = true
 
   endpoints {
-    kms        = var.localstack_endpoint
-    s3         = var.localstack_endpoint
-    iam        = var.localstack_endpoint
-    lambda     = var.localstack_endpoint
-    cloudwatch = var.localstack_endpoint
-    glue       = var.localstack_endpoint
-    sts        = var.localstack_endpoint
+    kms            = var.localstack_endpoint
+    s3             = var.localstack_endpoint
+    iam            = var.localstack_endpoint
+    lambda         = var.localstack_endpoint
+    cloudwatch     = var.localstack_endpoint
+    cloudwatchlogs = var.localstack_endpoint
+    glue           = var.localstack_endpoint
+    sts            = var.localstack_endpoint
   }
 }

@@ -41,3 +41,35 @@ module "s3_silver" {
     ManagedBy   = "Terraform"
   }
 }
+
+module "iam" {
+  source = "../../modules/iam"
+
+  role_name     = "${var.project_name}-${var.environment}-collector-role"
+  s3_bucket_arn = module.s3_bronze.bucket_arn
+  kms_key_arn   = module.kms.key_arn
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+    ManagedBy   = "Terraform"
+  }
+}
+
+module "lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "${var.project_name}-${var.environment}-collector"
+  role_arn      = module.iam.role_arn
+  package_path  = "${path.module}/../../dist/collector_lambda.zip"
+  environment_variables = {
+    RAW_BUCKET  = module.s3_bronze.bucket_id
+    DESTINATION = "s3"
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+    ManagedBy   = "Terraform"
+  }
+}

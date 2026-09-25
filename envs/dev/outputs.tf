@@ -46,3 +46,47 @@ output "s3_silver_bucket_arn" {
   description = "The ARN of the silver s3 bucket."
   value       = module.s3_silver.bucket_arn
 }
+
+# ---
+# IAM (Collector)
+# ---
+
+output "iam_collector_role_arn" {
+  description = "The ARN of the collector Lambda IAM execution role."
+  value       = module.iam.role_arn
+}
+
+output "iam_collector_role_name" {
+  description = "The name of the collector Lambda IAM execution role."
+  value       = module.iam.role_name
+}
+
+# ---
+# Lambda (Collector)
+# ---
+
+output "lambda_collector_function_arn" {
+  description = "The ARN of the collector Lambda function."
+  value       = module.lambda.function_arn
+}
+
+output "lambda_collector_function_name" {
+  description = "The name of the collector Lambda function."
+  value       = module.lambda.function_name
+}
+
+output "lambda_collector_invoke_arn" {
+  description = "The invocation ARN used by EventBridge / API Gateway to trigger the Lambda."
+  value       = module.lambda.invoke_arn
+}
+
+output "lambda_collector_log_group_name" {
+  description = "The CloudWatch Log Group name for the collector Lambda."
+  value       = module.lambda.log_group_name
+}
+
+output "lambda_collector_log_group_arn" {
+  description = "The CloudWatch Log Group ARN for the collector Lambda."
+  value       = module.lambda.log_group_arn
+}
+

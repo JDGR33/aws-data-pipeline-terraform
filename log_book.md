@@ -233,3 +233,22 @@ The next project stage is the raw-zone processing contract: read these objects f
   * **Module Output Coupling Pitfalls:** Lambda outputs must reference the function resource (`aws_lambda_function.this.arn`), not the associated log group. Referencing the wrong ARN causes silent downstream failures when provisioning invocation triggers (e.g., EventBridge target or IAM permissions).
   * **Dynamic Environment Blocks:** Using `dynamic "environment"` with conditional `for_each = length(keys(var.environment_variables)) > 0 ? [var.environment_variables] : []` allows the module to be reused across functions with or without environment variables without violating provider schema contracts.
 * **TODO:** Wire `modules/iam` and `modules/lambda` into `envs/dev/main.tf`, configure EventBridge scheduled trigger (`modules/eventbridge`), and verify end-to-end invocation in LocalStack.
+
+## 2026-09-25 - Dev Environment Wiring, Output Architecture & LocalStack Validation
+* **Wired IAM & Lambda Modules into Dev Stack (`envs/dev/main.tf`):**
+  * Integrated `module.iam` supplying the least-privilege collector role configured with S3 write access to Bronze bucket and KMS key encryption permissions.
+  * Integrated `module.lambda` passing `role_arn = module.iam.role_arn`, the pre-packaged zip artifact (`dist/collector_lambda.zip`), and runtime environment variables (`RAW_BUCKET`, `DESTINATION=s3`).
+* **Root Environment Output Architecture (`envs/dev/outputs.tf`):**
+  * Exported IAM collector role outputs: `iam_collector_role_arn` and `iam_collector_role_name`.
+  * Exported Lambda outputs: `lambda_collector_function_arn`, `lambda_collector_function_name`, `lambda_collector_invoke_arn`, `lambda_collector_log_group_name`, and `lambda_collector_log_group_arn`.
+  * Resolved a module encapsulation bug where root outputs were initially misplaced into `modules/iam/outputs.tf`, restoring clean modular boundary separation.
+* **LocalStack Provider Routing Fix (`envs/dev/providers.tf`):**
+  * Added `cloudwatchlogs = var.localstack_endpoint` to the AWS provider `endpoints` block. In the AWS Terraform provider, `cloudwatch` routes metrics/alarms, while `cloudwatchlogs` routes `aws_cloudwatch_log_group`, preventing requests from attempting to route to live AWS during native Terraform executions.
+* **Validation & LocalStack Plan Verification:**
+  * Synchronized module tree via `terraform get` and validated syntax via `terraform validate` ("Success! The configuration is valid.").
+  * Executed `tflocal plan` against running LocalStack container, confirming clean execution plan with 5 new resources (`+5 to add, 0 to change, 0 to destroy`).
+  * Re-verified Python collector unit test suite (`tests/test_collector.py`) passing 10/10 tests.
+* **Engineering Deep-Dive & Lessons Learned: Terraform Module Encapsulation & Provider Endpoints:**
+  * **Module Encapsulation & Output Scope:** Child modules should only expose attributes of the resources they declare. Cross-module orchestration and public interface exposure belong strictly in the root module (`envs/dev/outputs.tf`), preventing cyclic or undeclared module references (`Error: Reference to undeclared module`).
+  * **CloudWatch vs. CloudWatch Logs Endpoints:** AWS separates metric monitoring (`cloudwatch`) from log storage (`logs` / `cloudwatchlogs`). Omitting `cloudwatchlogs` from LocalStack provider endpoints causes Terraform to send log group operations to real AWS public endpoints, resulting in authentication errors or state timeouts.
+* **TODO:** Deploy stack with `tflocal apply`, perform live invocation testing against LocalStack, implement EventBridge cron trigger (`modules/eventbridge`), and prepare for Sprint 3 (Glue PySpark ETL).

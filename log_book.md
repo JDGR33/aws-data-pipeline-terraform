@@ -252,3 +252,27 @@ The next project stage is the raw-zone processing contract: read these objects f
   * **Module Encapsulation & Output Scope:** Child modules should only expose attributes of the resources they declare. Cross-module orchestration and public interface exposure belong strictly in the root module (`envs/dev/outputs.tf`), preventing cyclic or undeclared module references (`Error: Reference to undeclared module`).
   * **CloudWatch vs. CloudWatch Logs Endpoints:** AWS separates metric monitoring (`cloudwatch`) from log storage (`logs` / `cloudwatchlogs`). Omitting `cloudwatchlogs` from LocalStack provider endpoints causes Terraform to send log group operations to real AWS public endpoints, resulting in authentication errors or state timeouts.
 * **TODO:** Deploy stack with `tflocal apply`, perform live invocation testing against LocalStack, implement EventBridge cron trigger (`modules/eventbridge`), and prepare for Sprint 3 (Glue PySpark ETL).
+
+## 2026-10-06 - EventBridge Child Module Implementation & Scheduled Ingestion Architecture
+* **Live Stack Provisioning & Lambda Invocation Testing:**
+  * Deployed the base infrastructure stack (KMS key, Bronze and Silver S3 buckets, IAM collector role, and Lambda collector function) to LocalStack via `tflocal apply`.
+  * Executed live Lambda invocation test with `texas_weather` payload. Verified successful collection (`200 OK`, 1,987 bytes) writing encrypted `payload.json` and `metadata.json` directly to `s3://texas-data-pipeline-dev-bronze/`.
+* **Created EventBridge Child Module (`modules/eventbridge`):**
+  * `variables.tf`: Defined parameterized inputs for `rule_name`, `description`, `schedule_expression`, `is_enabled`, `target_arn`, `function_name`, `target_input`, and `tags` with alphanumeric validation rules on naming syntax.
+  * `main.tf`:
+    * Configured scheduled rule (`aws_cloudwatch_event_rule.this`) with state toggle (`ENABLED` / `DISABLED`) and standardized resource tags.
+    * Configured target mapping (`aws_cloudwatch_event_target.this`) linking the rule to the collector Lambda ARN.
+    * Configured invocation authorization (`aws_lambda_permission.this`) granting `lambda:InvokeFunction` to principal `events.amazonaws.com` with least-privilege scoping to `source_arn = aws_cloudwatch_event_rule.this.arn`.
+  * `outputs.tf`: Exposed `rule_arn` and `rule_name` for downstream root environment consumption.
+* **Dev Environment Integration (`envs/dev`):**
+  * Configured LocalStack provider routing in `envs/dev/providers.tf` by adding `events = var.localstack_endpoint`.
+  * Instantiated `module.evenbridge` in `envs/dev/main.tf` with a daily collection schedule (`rate(1 day)`), targeted at `module.lambda.function_arn`.
+  * Exported `event_rule_arn` and `event_rule_name` in `envs/dev/outputs.tf`.
+* **Validation & LocalStack Execution Planning:**
+  * Formatted code via `terraform fmt` and verified HCL configuration validity via `tflocal validate` ("Success! The configuration is valid.").
+  * Executed `tflocal plan` against running LocalStack instance, verifying a clean plan adding 3 new resources (`+3 to add, 0 to change, 0 to destroy`).
+* **Engineering Deep-Dive & Lessons Learned: EventBridge Scheduling & Least-Privilege Permissions:**
+  * **Confused Deputy Prevention in Lambda Permissions:** When granting invocation permissions via `aws_lambda_permission`, simply granting `principal = "events.amazonaws.com"` allows *any* event rule across the AWS account or organization to trigger the function. Enforcing `source_arn = aws_cloudwatch_event_rule.this.arn` restricts invocation strictly to the authorized schedule rule.
+  * **Operational Control via `is_enabled`:** Defaulting schedule rules to configurable states allows development environments to provision the entire pipeline topology without triggering unintended recurring API calls and log volume.
+  * **Provider Routing for AWS Events:** In Terraform's AWS provider, EventBridge rules are managed under the `events` service endpoint. Explicitly mapping `events = var.localstack_endpoint` ensures Terraform communicates with LocalStack rather than failing against live AWS.
+* **TODO:** Deploy EventBridge resources with `tflocal apply`, verify scheduled execution in LocalStack, and begin Sprint 3 (AWS Glue PySpark ETL for Bronze-to-Silver transformation).

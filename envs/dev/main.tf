@@ -73,3 +73,22 @@ module "lambda" {
     ManagedBy   = "Terraform"
   }
 }
+
+module "evenbridge" {
+  source = "../../modules/eventbridge"
+
+  rule_name   = "${var.project_name}-${var.environment}"
+  description = "Daily scheduled trigger for Texas Energy and Weather raw collection"
+
+  schedule_expression = "rate(1 day)"
+  is_enabled          = true
+
+  target_arn    = module.lambda.function_arn
+  function_name = module.lambda.function_name
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+    ManagedBy   = "Terraform"
+  }
+}

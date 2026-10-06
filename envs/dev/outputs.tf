@@ -90,3 +90,18 @@ output "lambda_collector_log_group_arn" {
   value       = module.lambda.log_group_arn
 }
 
+# ---
+# EventBridge
+# ---
+
+output "event_rule_arn" {
+  description = "The EventBridge ARN for raw collection"
+  value       = module.evenbridge.rule_arn
+
+}
+
+output "event_rule_name" {
+  description = "The EventBridge rule name for raw collection"
+  value       = module.evenbridge.rule_name
+
+}

@@ -16,5 +16,6 @@ provider "aws" {
     cloudwatchlogs = var.localstack_endpoint
     glue           = var.localstack_endpoint
     sts            = var.localstack_endpoint
+    events         = var.localstack_endpoint
   }
 }

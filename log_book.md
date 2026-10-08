@@ -276,3 +276,28 @@ The next project stage is the raw-zone processing contract: read these objects f
   * **Operational Control via `is_enabled`:** Defaulting schedule rules to configurable states allows development environments to provision the entire pipeline topology without triggering unintended recurring API calls and log volume.
   * **Provider Routing for AWS Events:** In Terraform's AWS provider, EventBridge rules are managed under the `events` service endpoint. Explicitly mapping `events = var.localstack_endpoint` ensures Terraform communicates with LocalStack rather than failing against live AWS.
 * **TODO:** Deploy EventBridge resources with `tflocal apply`, verify scheduled execution in LocalStack, and begin Sprint 3 (AWS Glue PySpark ETL for Bronze-to-Silver transformation).
+
+## 2026-10-08 - Live AWS Environment Provisioning, SSO Authentication & End-to-End Ingestion Validation
+* **LocalStack Limitations & Multi-Environment Strategy:**
+  * Determined that AWS Glue (Jobs, Crawlers, and Catalog) is unsupported under LocalStack Community Edition (`InternalFailure: glue service is not included within your LocalStack license`).
+  * Implemented an enterprise multi-environment pattern: preserved `envs/dev` configured for LocalStack mock testing and created `envs/prod` targeting native AWS infrastructure.
+* **AWS IAM Identity Center (SSO) Integration:**
+  * Configured AWS IAM Identity Center with administrative user (`dev-admin`), permission set (`AdministratorAccess`), and account assignment (`605134438346`).
+  * Configured local AWS CLI SSO session via `aws configure sso` generating profile `dev` linked to `sso-session my-sso`.
+  * Verified STS identity resolution: `arn:aws:sts::605134438346:assumed-role/AWSReservedSSO_AdministratorAccess_95bbb9fa8381196a/dev-admin`.
+* **Created Production Environment Stack (`envs/prod`):**
+  * `versions.tf`: Pinned Terraform `>= 1.5.0` and AWS provider `>= 5.0`.
+  * `providers.tf`: Configured native AWS provider referencing `profile = var.aws_profile` (`dev`) and default resource tags (`Environment = prod`, `Project = texas-data-pipeline`, `ManagedBy = Terraform`), removing all LocalStack mock endpoints and hardcoded dummy credentials.
+  * `variables.tf`: Defined parameters for `aws_region` (`us-east-1`), `aws_profile` (`dev`), `environment` (`prod`), `bucket_suffix`, `force_destroy` (`true`), `schedule_expression` (`rate(1 day)`), `schedule_enabled` (`true`), and `eia_api_key`.
+  * `main.tf`: Instantiated reusable modules: `module.kms`, `module.s3_bronze`, `module.s3_silver`, `module.iam`, `module.lambda`, and `module.eventbridge`.
+  * `outputs.tf`: Exposed full resource inventory (KMS key/alias ARNs, Bronze/Silver bucket IDs/ARNs, IAM role ARN, Lambda function/log group ARNs, and EventBridge rule ARN).
+* **Live Stack Provisioning & Lambda Ingestion Testing on AWS:**
+  * Initialized and validated configuration via `terraform -chdir=envs/prod init` and `terraform -chdir=envs/prod validate` ("Success! The configuration is valid.").
+  * Executed `terraform apply` on live AWS: successfully provisioned 20 infrastructure resources.
+  * Executed live Lambda invocation test with `texas_weather` payload against live AWS Lambda. Verified successful response (`statusCode: 200`, `processed_count: 1`).
+  * Verified real S3 upload via AWS CLI: confirmed encrypted `payload.json` (1,980 bytes) and `metadata.json` (658 bytes) written to `s3://texas-data-pipeline-prod-bronze/source=open_meteo/dataset=texas_weather/delivery_type=incremental/ingested_date=2026-10-08/`.
+* **Engineering Deep-Dive & Lessons Learned: Cloud Cost Economics & Teardown Architecture:**
+  * **Serverless Cost Economics (Standby vs. Execution):** The entire data lake architecture (S3, Lambda, EventBridge, Glue Jobs, Glue Catalog, and Athena) is serverless with **$0.00 standby costs**. The only continuous charge is the KMS customer-managed key (~$1.00/month or ~$0.0014/hour). Glue ETL is billed strictly per execution second (~$0.03 per test run), and Athena charges per data scanned ($5.00/TB; a few thousandths of a cent for Parquet queries).
+  * **KMS Deletion Lifecycle & Aliases:** AWS enforces a mandatory 7-to-30 day `PendingDeletion` window when destroying KMS keys. Rapid destroy-and-reapply cycles can leave dormant keys in the account, making operational toggle of EventBridge schedules (`schedule_enabled = false`) a cleaner cost-control alternative than daily teardowns.
+  * **Glue Spark Safety Guardrails:** AWS Glue jobs default to a 48-hour execution timeout (2,880 minutes) and automatic retries. In IaC definitions, hardcoding `timeout = 10` and `max_retries = 0` is required to prevent runaway costs on failed or hanging ETL runs.
+* **TODO:** Begin Sprint 3 by developing the AWS Glue PySpark transformation script (`glue/transform_raw_to_refined.py`) to process Bronze JSON into partitioned Silver Snappy Parquet, and build the Glue IaC module (`modules/glue`).

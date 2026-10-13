@@ -331,4 +331,18 @@ The next project stage is the raw-zone processing contract: read these objects f
 * **Engineering Deep-Dive & Lessons Learned: S3 Object KMS Encryption & Terraform ETag Conflicts:**
   * **ETag vs. KMS in `aws_s3_object`:** In AWS S3, objects encrypted with customer-managed KMS keys do not report an ETag matching the MD5 of plaintext content. Specifying `etag = filemd5(...)` alongside `kms_key_id` triggers a Terraform provider conflict error (`"etag": conflicts with kms_key_id`). The correct pattern is `source_hash = filemd5(...)`, which tracks local file modifications without interfering with S3 server-side encryption.
   * **Data Lake Separation of Concerns:** Application scripts and Lambda packages must never reside in data partitions. Keeping an independent artifacts bucket ensures that data retention lifecycle policies (e.g. deleting or Glacier-transitioning raw Bronze files) never inadvertently corrupt or delete executable deployment code.
-* **TODO:** Apply Terraform configuration on AWS (`terraform -chdir=envs/prod apply`), trigger live Glue ETL run against Bronze weather data, verify Silver Snappy Parquet partitions, and proceed to Sprint 4 (AWS Glue Catalog & Athena).
+* **Live Glue ETL Debugging & End-to-End Silver Parquet Validation:**
+  * **Issue 1: Hadoop FileSystem Globbing (`AnalysisException: Path does not exist ... /**/payload.json`):**
+    * Discovered that Apache Spark / Hadoop `FileSystem.globStatus` does not support recursive double-star wildcards (`**`) across multiple directory separators (`/`).
+    * Implemented explicit 3-level directory wildcard matching the partition structure (`/*/*/*/payload.json`) with automated fallback to `recursiveFileLookup = true` and `pathGlobFilter = *payload.json`.
+  * **Issue 2: Catalyst Schema Inference on Empty JSON Arrays (`Can't extract value from record: need struct type but got string`):**
+    * For datasets with no records (e.g. EIA monthly retail sales for current month `2026-10` where `response.data = []`), Spark infers empty array elements as `StringType` rather than `StructType`. Dot-notation access during Catalyst planning failed with `AnalysisException`.
+    * Implemented `has_valid_records()` guard verifying that the array element type is `StructType` before attempting extraction, gracefully skipping empty datasets.
+  * **Issue 3: PySpark `arrays_zip` Struct Field Resolution (`No such struct field 0 ...`):**
+    * Open-Meteo weather array zipping generates named struct fields in Spark 3.3 (`time`, `temperature_2m`, etc.). Accessing fallback positional indices (`z.0`) triggered Catalyst planning errors.
+    * Dynamically resolved struct field names from `zipped_df.schema["z"].dataType.names`.
+  * **End-to-End Execution & Lake Validation:**
+    * Triggered live Glue ETL job run `jr_073445980694eeaf52ec43394816f924482b54b8d3da3cf886e4530c9fe70e82`: execution succeeded in 116 seconds.
+    * Processed 26 records for `ercot_demand_forecast`, 112 records for `ercot_fuel_type`, 96 records for `texas_weather`, and gracefully skipped empty `tx_retail_sales`.
+    * Confirmed partitioned Snappy Parquet files generated in Silver S3 lake (`s3://texas-data-pipeline-prod-silver/`).
+* **TODO:** Proceed to Sprint 4 (AWS Glue Catalog & Athena) to define database, tables, and test SQL queries against the partitioned Silver Parquet data lake.

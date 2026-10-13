@@ -15,8 +15,10 @@ from typing import Any
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
+    ArrayType,
     DoubleType,
     StringType,
+    StructType,
 )
 
 # Configure logging
@@ -110,16 +112,77 @@ def write_quarantine(df: DataFrame, quarantine_path: str) -> None:
         df.write.mode("append").parquet(quarantine_path)
 
 
+def read_raw_payloads(
+    spark: SparkSession,
+    bronze_bucket: str,
+    source: str,
+    dataset: str,
+) -> DataFrame | None:
+    """Read raw payload JSON files for a given dataset, handling Spark S3 globbing."""
+    # Pattern matching: source=<src>/dataset=<ds>/delivery_type=*/ingested_date=*/request_id=*/payload.json
+    pattern = f"s3://{bronze_bucket}/source={source}/dataset={dataset}/*/*/*/payload.json"
+    logger.info("Reading raw payloads for %s using pattern: %s", dataset, pattern)
+    try:
+        return spark.read.json(pattern)
+    except Exception as exc:
+        err_msg = str(exc)
+        if "Path does not exist" in err_msg or "AnalysisException" in type(exc).__name__:
+            logger.warning(
+                "Glob pattern %s matched no files. Falling back to recursive scan on dataset prefix.",
+                pattern,
+            )
+            try:
+                prefix = f"s3://{bronze_bucket}/source={source}/dataset={dataset}/"
+                return (
+                    spark.read.option("recursiveFileLookup", "true")
+                    .option("pathGlobFilter", "*payload.json")
+                    .json(prefix)
+                )
+            except Exception as fallback_exc:
+                logger.warning(
+                    "No payload files found for dataset %s in Bronze: %s",
+                    dataset,
+                    fallback_exc,
+                )
+                return None
+        raise
+
+
+def has_valid_records(df: DataFrame, array_field_path: str = "response.data") -> bool:
+    """Check if the DataFrame has records in the specified nested array and that elements are structs."""
+    try:
+        parts = array_field_path.split(".")
+        current_schema = df.schema
+        for part in parts[:-1]:
+            field = next((f for f in current_schema.fields if f.name == part), None)
+            if not field or not isinstance(field.dataType, StructType):
+                return False
+            current_schema = field.dataType
+
+        leaf_name = parts[-1]
+        leaf_field = next((f for f in current_schema.fields if f.name == leaf_name), None)
+        if not leaf_field or not isinstance(leaf_field.dataType, ArrayType):
+            return False
+
+        # If data: [] is empty across all JSON files, Spark infers elementType as StringType instead of StructType
+        return isinstance(leaf_field.dataType.elementType, StructType)
+    except Exception:
+        return False
+
+
 def transform_ercot_demand_forecast(
     spark: SparkSession, bronze_bucket: str, silver_bucket: str
 ) -> None:
     """Transform ERCOT day-ahead demand forecast raw JSON into Silver Parquet."""
-    input_path = f"s3://{bronze_bucket}/source=eia/dataset=ercot_demand_forecast/**/payload.json"
-    logger.info("Processing ercot_demand_forecast from %s", input_path)
-
-    raw_df = spark.read.json(input_path)
+    raw_df = read_raw_payloads(spark, bronze_bucket, "eia", "ercot_demand_forecast")
+    if raw_df is None:
+        logger.warning("Skipping ercot_demand_forecast due to missing raw files.")
+        return
     if "response" not in raw_df.columns:
         logger.warning("Missing 'response' column in payload. Skipping ercot_demand_forecast.")
+        return
+    if not has_valid_records(raw_df, "response.data"):
+        logger.info("No struct records found in response.data for ercot_demand_forecast. Skipping.")
         return
 
     exploded_df = raw_df.select(F.explode("response.data").alias("record"))
@@ -169,12 +232,15 @@ def transform_ercot_fuel_type(
     spark: SparkSession, bronze_bucket: str, silver_bucket: str
 ) -> None:
     """Transform ERCOT generation by fuel type raw JSON into Silver Parquet."""
-    input_path = f"s3://{bronze_bucket}/source=eia/dataset=ercot_fuel_type/**/payload.json"
-    logger.info("Processing ercot_fuel_type from %s", input_path)
-
-    raw_df = spark.read.json(input_path)
+    raw_df = read_raw_payloads(spark, bronze_bucket, "eia", "ercot_fuel_type")
+    if raw_df is None:
+        logger.warning("Skipping ercot_fuel_type due to missing raw files.")
+        return
     if "response" not in raw_df.columns:
         logger.warning("Missing 'response' column in payload. Skipping ercot_fuel_type.")
+        return
+    if not has_valid_records(raw_df, "response.data"):
+        logger.info("No struct records found in response.data for ercot_fuel_type. Skipping.")
         return
 
     exploded_df = raw_df.select(F.explode("response.data").alias("record"))
@@ -225,12 +291,15 @@ def transform_tx_retail_sales(
     spark: SparkSession, bronze_bucket: str, silver_bucket: str
 ) -> None:
     """Transform Texas monthly electricity retail sales raw JSON into Silver Parquet."""
-    input_path = f"s3://{bronze_bucket}/source=eia/dataset=tx_retail_sales/**/payload.json"
-    logger.info("Processing tx_retail_sales from %s", input_path)
-
-    raw_df = spark.read.json(input_path)
+    raw_df = read_raw_payloads(spark, bronze_bucket, "eia", "tx_retail_sales")
+    if raw_df is None:
+        logger.warning("Skipping tx_retail_sales due to missing raw files.")
+        return
     if "response" not in raw_df.columns:
         logger.warning("Missing 'response' column in payload. Skipping tx_retail_sales.")
+        return
+    if not has_valid_records(raw_df, "response.data"):
+        logger.info("No struct records found in response.data for tx_retail_sales. Skipping.")
         return
 
     exploded_df = raw_df.select(F.explode("response.data").alias("record"))
@@ -280,12 +349,12 @@ def transform_texas_weather(
     spark: SparkSession, bronze_bucket: str, silver_bucket: str
 ) -> None:
     """Transform Open-Meteo Texas weather raw JSON into Silver Parquet."""
-    input_path = f"s3://{bronze_bucket}/source=open_meteo/dataset=texas_weather/**/payload.json"
-    logger.info("Processing texas_weather from %s", input_path)
-
-    raw_df = spark.read.json(input_path)
-    if "hourly" not in raw_df.columns:
-        logger.warning("Missing 'hourly' column in payload. Skipping texas_weather.")
+    raw_df = read_raw_payloads(spark, bronze_bucket, "open_meteo", "texas_weather")
+    if raw_df is None:
+        logger.warning("Skipping texas_weather due to missing raw files.")
+        return
+    if "hourly" not in raw_df.columns or not isinstance(raw_df.schema["hourly"].dataType, StructType):
+        logger.warning("Missing or invalid 'hourly' struct in payload. Skipping texas_weather.")
         return
 
     # Zip columnar parallel arrays into a single array of structs, then explode
@@ -300,11 +369,17 @@ def transform_texas_weather(
         ).alias("z")
     )
 
-    # Resolve struct fields supporting both named struct fields and positional indices
-    time_raw = F.coalesce(F.col("z.time"), F.col("z.0"))
-    temp_raw = F.coalesce(F.col("z.temperature_2m"), F.col("z.1"))
-    dni_raw = F.coalesce(F.col("z.direct_normal_irradiance"), F.col("z.2"))
-    wind_raw = F.coalesce(F.col("z.wind_speed_10m"), F.col("z.3"))
+    # Resolve struct fields supporting both named struct fields and positional indices dynamically
+    z_fields = zipped_df.schema["z"].dataType.names
+    time_col = "time" if "time" in z_fields else z_fields[0]
+    temp_col = "temperature_2m" if "temperature_2m" in z_fields else z_fields[1]
+    dni_col = "direct_normal_irradiance" if "direct_normal_irradiance" in z_fields else z_fields[2]
+    wind_col = "wind_speed_10m" if "wind_speed_10m" in z_fields else z_fields[3]
+
+    time_raw = F.col(f"z.{time_col}")
+    temp_raw = F.col(f"z.{temp_col}")
+    dni_raw = F.col(f"z.{dni_col}")
+    wind_raw = F.col(f"z.{wind_col}")
 
     time_ts = F.coalesce(
         F.to_timestamp(time_raw, "yyyy-MM-dd'T'HH:mm"),

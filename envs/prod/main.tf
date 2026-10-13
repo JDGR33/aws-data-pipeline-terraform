@@ -45,6 +45,21 @@ module "s3_silver" {
   }
 }
 
+module "s3_artifacts" {
+  source = "../../modules/s3"
+
+  bucket_name   = "${var.project_name}-${var.environment}${local.name_suffix}-artifacts"
+  kms_key_arn   = module.kms.key_arn
+  force_destroy = var.force_destroy
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+    Layer       = "artifacts"
+    ManagedBy   = "Terraform"
+  }
+}
+
 module "iam" {
   source = "../../modules/iam"
 
@@ -91,6 +106,30 @@ module "eventbridge" {
 
   target_arn    = module.lambda.function_arn
   function_name = module.lambda.function_name
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+    ManagedBy   = "Terraform"
+  }
+}
+
+module "glue" {
+  source = "../../modules/glue"
+
+  job_name          = "${var.project_name}-${var.environment}-etl"
+  description       = "PySpark ETL job transforming Bronze JSON to partitioned Silver Parquet (${var.environment})"
+  script_local_path = "${path.module}/../../glue/transform_raw_to_refined.py"
+  script_bucket_id  = module.s3_artifacts.bucket_id
+  script_bucket_arn = module.s3_artifacts.bucket_arn
+  script_s3_key     = "scripts/transform_raw_to_refined.py"
+  bronze_bucket_id  = module.s3_bronze.bucket_id
+  bronze_bucket_arn = module.s3_bronze.bucket_arn
+  silver_bucket_id  = module.s3_silver.bucket_id
+  silver_bucket_arn = module.s3_silver.bucket_arn
+  kms_key_arn       = module.kms.key_arn
+  timeout           = var.glue_timeout
+  number_of_workers = var.glue_number_of_workers
 
   tags = {
     Environment = var.environment

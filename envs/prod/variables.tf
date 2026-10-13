@@ -52,3 +52,15 @@ variable "eia_api_key" {
   default     = ""
   sensitive   = true
 }
+
+variable "glue_timeout" {
+  description = "Execution timeout for the Glue job in minutes (cost safety guardrail)."
+  type        = number
+  default     = 10
+}
+
+variable "glue_number_of_workers" {
+  description = "Number of G.1X workers to allocate for the Glue job."
+  type        = number
+  default     = 2
+}

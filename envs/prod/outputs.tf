@@ -51,6 +51,20 @@ output "s3_silver_bucket_arn" {
 }
 
 # ---
+# S3 Artifacts
+# ---
+
+output "s3_artifacts_bucket_id" {
+  description = "ID of the artifacts S3 bucket."
+  value       = module.s3_artifacts.bucket_id
+}
+
+output "s3_artifacts_bucket_arn" {
+  description = "The ARN of the artifacts S3 bucket."
+  value       = module.s3_artifacts.bucket_arn
+}
+
+# ---
 # IAM (Collector)
 # ---
 
@@ -105,4 +119,28 @@ output "event_rule_arn" {
 output "event_rule_name" {
   description = "The EventBridge rule name for raw collection."
   value       = module.eventbridge.rule_name
+}
+
+# ---
+# AWS Glue
+# ---
+
+output "glue_job_name" {
+  description = "The name of the AWS Glue PySpark ETL job."
+  value       = module.glue.job_name
+}
+
+output "glue_job_arn" {
+  description = "The ARN of the AWS Glue PySpark ETL job."
+  value       = module.glue.job_arn
+}
+
+output "glue_role_arn" {
+  description = "The ARN of the IAM execution role used by the Glue job."
+  value       = module.glue.role_arn
+}
+
+output "glue_script_s3_uri" {
+  description = "The S3 URI of the PySpark ETL script."
+  value       = module.glue.script_s3_uri
 }

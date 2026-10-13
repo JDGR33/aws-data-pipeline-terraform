@@ -301,3 +301,34 @@ The next project stage is the raw-zone processing contract: read these objects f
   * **KMS Deletion Lifecycle & Aliases:** AWS enforces a mandatory 7-to-30 day `PendingDeletion` window when destroying KMS keys. Rapid destroy-and-reapply cycles can leave dormant keys in the account, making operational toggle of EventBridge schedules (`schedule_enabled = false`) a cleaner cost-control alternative than daily teardowns.
   * **Glue Spark Safety Guardrails:** AWS Glue jobs default to a 48-hour execution timeout (2,880 minutes) and automatic retries. In IaC definitions, hardcoding `timeout = 10` and `max_retries = 0` is required to prevent runaway costs on failed or hanging ETL runs.
 * **TODO:** Begin Sprint 3 by developing the AWS Glue PySpark transformation script (`glue/transform_raw_to_refined.py`) to process Bronze JSON into partitioned Silver Snappy Parquet, and build the Glue IaC module (`modules/glue`).
+
+## 2026-10-13 - PySpark ETL Implementation, Artifacts Decoupling & Glue IaC Architecture
+* **PySpark Bronze-to-Silver Transformation Script (`glue/transform_raw_to_refined.py`):**
+  * Created production-ready PySpark ETL script supporting all 4 domain datasets (`ercot_demand_forecast`, `ercot_fuel_type`, `tx_retail_sales`, `texas_weather`).
+  * Enforced dual-runtime compatibility (`GlueContext` inside AWS Glue and fallback `argparse` for local CLI/testing).
+  * Implemented timestamp normalization to UTC `TimestampType` / `DateType`, numeric type casting, deduplication on primary keys, and dynamic partition overwrites (`year=YYYY/month=MM/`).
+  * Implemented resilient array zipping (`F.arrays_zip`, `F.explode`) for Open-Meteo weather measurements with cross-Spark version compatibility.
+  * Verified script syntax via `python3 -m py_compile` (0 errors) and committed under git.
+* **Architectural Separation: Dedicated S3 Artifacts Bucket (`module.s3_artifacts`):**
+  * Identified architectural deficiency in storing pipeline code inside the Bronze data lake landing zone (risk of lifecycle archiving, crawler schema confusion, and cross-plane permission entanglement).
+  * Provisioned dedicated `texas-data-pipeline-prod-artifacts` S3 bucket in `envs/prod` using `modules/s3` with customer-managed KMS encryption, versioning, and bucket owner enforcement.
+  * Rerouted PySpark script uploads to `s3://texas-data-pipeline-prod-artifacts/scripts/transform_raw_to_refined.py`.
+* **Data Lake Quality Gate & Bronze Immutability:**
+  * Analyzed quarantine routing pattern for corrupted/null records: routed invalid rows to `s3://<silver>/quarantine/<dataset>/` rather than Bronze.
+  * Removed `S3BronzeQuarantineWriteAccess` from Glue IAM policy, ensuring Bronze remains strictly immutable and read-only (`s3:GetObject`, `s3:ListBucket`).
+* **Created Reusable AWS Glue Child Module (`modules/glue`):**
+  * `variables.tf`: Defined parameterized configurations for job name, Glue version (`4.0`), worker allocation (`2 * G.1X`), execution timeout (`10` minutes), max retries (`0`), and bucket ARNs with strict validation rules.
+  * `main.tf`:
+    * Configured script upload (`aws_s3_object.script`) using `source_hash = filemd5(...)` for KMS compatibility.
+    * Configured Glue execution role (`aws_iam_role.glue`) with trust policy on `glue.amazonaws.com` and `AWSGlueServiceRole` managed policy.
+    * Configured least-privilege lake policy granting read-only access to Bronze, read-only access to Artifacts scripts, read/write/delete to Silver, and KMS decrypt/generate data key permissions.
+    * Configured `aws_glue_job.this` with continuous CloudWatch logging, metrics, and Spark UI parameters.
+  * `outputs.tf`: Exposed `job_name`, `job_arn`, `job_id`, `role_arn`, and `script_s3_uri`.
+* **Prod Environment Integration & Execution Planning (`envs/prod`):**
+  * Wired `module.s3_artifacts` and `module.glue` into `envs/prod/main.tf` with outputs exported in `envs/prod/outputs.tf`.
+  * Verified HCL validity via `terraform validate` ("Success! The configuration is valid.").
+  * Executed live `terraform plan` against AWS account `605134438346`, verifying clean plan adding 10 resources (`+10 to add, 0 to change, 0 to destroy`).
+* **Engineering Deep-Dive & Lessons Learned: S3 Object KMS Encryption & Terraform ETag Conflicts:**
+  * **ETag vs. KMS in `aws_s3_object`:** In AWS S3, objects encrypted with customer-managed KMS keys do not report an ETag matching the MD5 of plaintext content. Specifying `etag = filemd5(...)` alongside `kms_key_id` triggers a Terraform provider conflict error (`"etag": conflicts with kms_key_id`). The correct pattern is `source_hash = filemd5(...)`, which tracks local file modifications without interfering with S3 server-side encryption.
+  * **Data Lake Separation of Concerns:** Application scripts and Lambda packages must never reside in data partitions. Keeping an independent artifacts bucket ensures that data retention lifecycle policies (e.g. deleting or Glacier-transitioning raw Bronze files) never inadvertently corrupt or delete executable deployment code.
+* **TODO:** Apply Terraform configuration on AWS (`terraform -chdir=envs/prod apply`), trigger live Glue ETL run against Bronze weather data, verify Silver Snappy Parquet partitions, and proceed to Sprint 4 (AWS Glue Catalog & Athena).

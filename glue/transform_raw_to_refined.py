@@ -104,7 +104,7 @@ def write_partitioned_parquet(
 
 
 def write_quarantine(df: DataFrame, quarantine_path: str) -> None:
-    """Write invalid or malformed records to Bronze quarantine prefix."""
+    """Write invalid or malformed records to Silver quarantine prefix."""
     if df.take(1):
         logger.warning("Writing invalid records to quarantine: %s", quarantine_path)
         df.write.mode("append").parquet(quarantine_path)
@@ -159,7 +159,7 @@ def transform_ercot_demand_forecast(
 
     # Output to Silver and Quarantine
     silver_path = f"s3://{silver_bucket}/ercot_demand_forecast/"
-    quarantine_path = f"s3://{bronze_bucket}/quarantine/ercot_demand_forecast/"
+    quarantine_path = f"s3://{silver_bucket}/quarantine/ercot_demand_forecast/"
 
     write_partitioned_parquet(clean_df, silver_path, ["year", "month"])
     write_quarantine(quarantine_df, quarantine_path)
@@ -215,7 +215,7 @@ def transform_ercot_fuel_type(
     quarantine_df = deduped_df.filter(~is_valid)
 
     silver_path = f"s3://{silver_bucket}/ercot_fuel_type/"
-    quarantine_path = f"s3://{bronze_bucket}/quarantine/ercot_fuel_type/"
+    quarantine_path = f"s3://{silver_bucket}/quarantine/ercot_fuel_type/"
 
     write_partitioned_parquet(clean_df, silver_path, ["year", "month"])
     write_quarantine(quarantine_df, quarantine_path)
@@ -270,7 +270,7 @@ def transform_tx_retail_sales(
     quarantine_df = deduped_df.filter(~is_valid)
 
     silver_path = f"s3://{silver_bucket}/tx_retail_sales/"
-    quarantine_path = f"s3://{bronze_bucket}/quarantine/tx_retail_sales/"
+    quarantine_path = f"s3://{silver_bucket}/quarantine/tx_retail_sales/"
 
     write_partitioned_parquet(clean_df, silver_path, ["year", "month"])
     write_quarantine(quarantine_df, quarantine_path)
@@ -334,7 +334,7 @@ def transform_texas_weather(
     quarantine_df = deduped_df.filter(~is_valid)
 
     silver_path = f"s3://{silver_bucket}/texas_weather/"
-    quarantine_path = f"s3://{bronze_bucket}/quarantine/texas_weather/"
+    quarantine_path = f"s3://{silver_bucket}/quarantine/texas_weather/"
 
     write_partitioned_parquet(clean_df, silver_path, ["year", "month"])
     write_quarantine(quarantine_df, quarantine_path)

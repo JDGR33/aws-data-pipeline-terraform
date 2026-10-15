@@ -64,3 +64,15 @@ variable "glue_number_of_workers" {
   type        = number
   default     = 2
 }
+
+variable "glue_schedule_expression" {
+  description = "The cron schedule expression for the Glue PySpark ETL job (e.g. 06:30 UTC daily, 30 mins after collection)."
+  type        = string
+  default     = "cron(30 6 * * ? *)"
+}
+
+variable "glue_schedule_enabled" {
+  description = "Whether the scheduled Glue trigger is enabled."
+  type        = bool
+  default     = true
+}

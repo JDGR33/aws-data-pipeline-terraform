@@ -27,3 +27,13 @@ output "script_s3_uri" {
   description = "The S3 URI of the uploaded PySpark script."
   value       = local.script_s3_uri
 }
+
+output "trigger_name" {
+  description = "The name of the scheduled Glue trigger (null if no schedule was defined)."
+  value       = try(aws_glue_trigger.scheduled[0].name, null)
+}
+
+output "trigger_arn" {
+  description = "The ARN of the scheduled Glue trigger (null if no schedule was defined)."
+  value       = try(aws_glue_trigger.scheduled[0].arn, null)
+}

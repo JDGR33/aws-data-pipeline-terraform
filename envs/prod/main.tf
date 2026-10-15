@@ -131,6 +131,9 @@ module "glue" {
   timeout           = var.glue_timeout
   number_of_workers = var.glue_number_of_workers
 
+  schedule_expression = var.glue_schedule_expression
+  schedule_enabled    = var.glue_schedule_enabled
+
   tags = {
     Environment = var.environment
     Project     = var.project_name

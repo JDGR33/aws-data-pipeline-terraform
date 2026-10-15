@@ -372,4 +372,9 @@ The next project stage is the raw-zone processing contract: read these objects f
   * **HCL Escaping for Athena Templates:** In Hive storage location templates (`${year}`), Terraform attempts variable interpolation unless escaped with `$$` (`$${year}`), a common IaC pitfall.
   * **Glue Database Naming Restrictions:** AWS Glue rejects database names containing hyphens (`-`), requiring programmatic replacement to underscores (`_`).
   * **Data Lake Query Economics:** Querying columnar Snappy Parquet with partition pruning scanned less than 5 KB of data across all tests, resulting in sub-millicent query costs while executing in under 1 second.
-* **TODO:** Implement GitHub Actions CI/CD workflow (`.github/workflows/ci.yml`) for automated linting, unit testing, and Terraform validation, and configure automated orchestration triggers.
+* **Pipeline Orchestration: Automated AWS Glue Trigger (`modules/glue`):**
+  * Added `aws_glue_trigger.scheduled` to `modules/glue/main.tf` with parameterized cron schedule (`schedule_expression`) and operational enable/disable toggle (`schedule_enabled`).
+  * Configured daily automated run in `envs/prod` scheduled at `cron(30 6 * * ? *)` (06:30 UTC), precisely 30 minutes after the Lambda raw collector run (06:00 UTC).
+  * Applied to AWS (`+1 resource created`), verified live trigger state `ACTIVATED` via `aws glue get-trigger`.
+  * Closes the autonomous pipeline loop: Public APIs -> Lambda (Bronze) -> Glue Trigger (Silver Parquet) -> Athena (SQL Serving).
+* **TODO:** Implement GitHub Actions CI/CD workflow (`.github/workflows/ci.yml`) for automated linting, unit testing, and Terraform validation, and polish documentation.

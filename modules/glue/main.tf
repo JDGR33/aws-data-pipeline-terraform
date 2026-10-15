@@ -145,3 +145,22 @@ resource "aws_glue_job" "this" {
     aws_iam_role_policy.glue_lake_access
   ]
 }
+
+# ---
+# Scheduled Glue Trigger (Orchestration)
+# ---
+resource "aws_glue_trigger" "scheduled" {
+  count = var.schedule_expression != null ? 1 : 0
+
+  name        = "${var.job_name}-scheduled-trigger"
+  description = "Scheduled trigger for Glue ETL job ${var.job_name}"
+  type        = "SCHEDULED"
+  schedule    = var.schedule_expression
+  enabled     = var.schedule_enabled
+
+  actions {
+    job_name = aws_glue_job.this.name
+  }
+
+  tags = var.tags
+}

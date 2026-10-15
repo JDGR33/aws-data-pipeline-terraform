@@ -122,6 +122,18 @@ variable "default_arguments" {
   default     = {}
 }
 
+variable "schedule_expression" {
+  description = "Optional cron expression for scheduling the Glue ETL job (e.g. 'cron(30 6 * * ? *)'). If null, no trigger is created."
+  type        = string
+  default     = null
+}
+
+variable "schedule_enabled" {
+  description = "Whether the Glue scheduled trigger is active."
+  type        = bool
+  default     = true
+}
+
 variable "tags" {
   description = "Key-value mapping of resource tags."
   type        = map(string)

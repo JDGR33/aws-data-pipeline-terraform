@@ -145,6 +145,16 @@ output "glue_script_s3_uri" {
   value       = module.glue.script_s3_uri
 }
 
+output "glue_trigger_name" {
+  description = "The name of the scheduled AWS Glue trigger."
+  value       = module.glue.trigger_name
+}
+
+output "glue_trigger_arn" {
+  description = "The ARN of the scheduled AWS Glue trigger."
+  value       = module.glue.trigger_arn
+}
+
 # ---
 # Amazon Athena & Glue Data Catalog
 # ---

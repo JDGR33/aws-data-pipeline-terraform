@@ -372,6 +372,13 @@ The next project stage is the raw-zone processing contract: read these objects f
   * **HCL Escaping for Athena Templates:** In Hive storage location templates (`${year}`), Terraform attempts variable interpolation unless escaped with `$$` (`$${year}`), a common IaC pitfall.
   * **Glue Database Naming Restrictions:** AWS Glue rejects database names containing hyphens (`-`), requiring programmatic replacement to underscores (`_`).
   * **Data Lake Query Economics:** Querying columnar Snappy Parquet with partition pruning scanned less than 5 KB of data across all tests, resulting in sub-millicent query costs while executing in under 1 second.
+* **Data Lake Idempotency & Deduplication Architecture:**
+  * **Bronze Immutability:** Raw uploads are partitioned by `ingested_date` with unique `request_id` UUID prefixes, ensuring multiple manual or automated calls for identical periods never overwrite existing files and maintain an immutable provenance trail.
+  * **PySpark Deduplication Contract:** Refined Parquet writes execute primary-key deduplication (`dropDuplicates` on `period` for ERCOT demand, composite keys for fuel/retail, and `time` for weather) to guarantee that duplicate Bronze payloads collapse cleanly into single-record Silver partitions.
+  * **AWS Glue Job Bookmarks:** Documented state-tracking mechanism (`job-bookmark-enable` vs `job-bookmark-disable`) for skipping previously processed raw files in high-throughput production vs development re-run flexibility.
+* **Historical Backfill Protocol & Seasonal Query Architecture:**
+  * Documented backfill execution procedure via `collector/backfill_year_2026.sh` targeting Open-Meteo Archive API and EIA v2 month-by-month (`START_MONTH=01 END_MONTH=09 DESTINATION=s3 RAW_BUCKET=...`).
+  * Verified that newly backfilled months dynamically generate `year=2026/month=01..09/` Silver Parquet partitions, immediately queryable in Athena without schema updates due to pre-configured Partition Projection (`projection.month.range = "1,12"`).
 * **Pipeline Orchestration: Automated AWS Glue Trigger (`modules/glue`):**
   * Added `aws_glue_trigger.scheduled` to `modules/glue/main.tf` with parameterized cron schedule (`schedule_expression`) and operational enable/disable toggle (`schedule_enabled`).
   * Configured daily automated run in `envs/prod` scheduled at `cron(30 6 * * ? *)` (06:30 UTC), precisely 30 minutes after the Lambda raw collector run (06:00 UTC).

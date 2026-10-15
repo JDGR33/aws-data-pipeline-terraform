@@ -346,3 +346,30 @@ The next project stage is the raw-zone processing contract: read these objects f
     * Processed 26 records for `ercot_demand_forecast`, 112 records for `ercot_fuel_type`, 96 records for `texas_weather`, and gracefully skipped empty `tx_retail_sales`.
     * Confirmed partitioned Snappy Parquet files generated in Silver S3 lake (`s3://texas-data-pipeline-prod-silver/`).
 * **TODO:** Proceed to Sprint 4 (AWS Glue Catalog & Athena) to define database, tables, and test SQL queries against the partitioned Silver Parquet data lake.
+
+## 2026-10-15 - Serving Layer Integration: AWS Glue Data Catalog, Athena Workgroup, & Analytical SQL Verification
+* **AWS Glue Data Catalog & Athena Child Module (`modules/athena`):**
+  * `variables.tf`: Defined parameterized configurations for database name (with `^[a-z0-9_]+$` validation), workgroup name, bucket references, and KMS encryption ARN.
+  * `main.tf`:
+    * Declared `aws_glue_catalog_database.this`: configured central database namespace (`texas_data_pipeline_prod_db`).
+    * Declared `aws_athena_workgroup.this`: enforced KMS SSE query result encryption (`enforce_workgroup_configuration = true`) and dedicated S3 output prefix (`s3://<artifacts>/athena-results/`).
+    * Configured 4 external Parquet tables (`ercot_demand_forecast`, `ercot_fuel_type`, `tx_retail_sales`, `texas_weather`) mapping directly to PySpark Silver Parquet schemas with `ParquetHiveSerDe` and `MapredParquetInputFormat`.
+    * Implemented **Athena Partition Projection**: configured `projection.enabled = true`, temporal ranges (`year: 2020-2030`, `month: 1-12`), and template paths (`s3://.../year=$${year}/month=$${month}`), enabling instant partition discovery without requiring `MSCK REPAIR TABLE` or AWS Glue Crawlers.
+  * `outputs.tf`: Exposed `database_name`, `database_arn`, `workgroup_name`, `workgroup_arn`, `query_results_s3_uri`, and `table_names`.
+* **Prod Environment Integration (`envs/prod`):**
+  * Wired `module.athena` into `envs/prod/main.tf` using sanitized naming (`replace("${var.project_name}_${var.environment}_db", "-", "_")`).
+  * Exported database, workgroup, and catalog table attributes in `envs/prod/outputs.tf`.
+  * Verified configuration syntax and module structure with `terraform validate` ("Success! The configuration is valid.").
+  * Deployed resources to AWS (`+6 to add, 0 to change, 0 to destroy`).
+* **Automated End-to-End Query Verification (`scripts/test_athena.sh`):**
+  * Created CLI test automation script executing queries via Athena API, polling status, and rendering execution times, bytes scanned, and results in clean ASCII tables.
+  * **Test 1 (Schema & SerDe):** Queried `texas_weather` (5 rows returned in 0.56s, 1.77 KB scanned).
+  * **Test 2 (Partition Pruning):** Queried `ercot_demand_forecast` aggregates for `year=2026/month=10` (26 hourly records, min demand 55,821 MWh, max demand 76,196 MWh in 0.48s, scanning just 180 bytes).
+  * **Test 3 (Analytical Cross-Dataset Join):** Executed `INNER JOIN` between ERCOT electricity demand and Open-Meteo weather metrics on timestamp (`d.period = w.time`), correlating grid load against ambient temperature and solar irradiance in 0.64s (2.23 KB scanned).
+  * **Test 4 (Security Audit):** Confirmed KMS-encrypted query output CSV and metadata objects generated in `s3://texas-data-pipeline-prod-artifacts/athena-results/`.
+* **Engineering Deep-Dive & Lessons Learned: Partition Projection & Serverless Query Economics:**
+  * **Partition Projection vs. Crawlers:** AWS Glue Crawlers incur cost per runtime second ($0.44/hour/DPU) and introduce scheduling latency. Athena Partition Projection evaluates folder paths purely in-memory from metadata definitions, eliminating crawler costs and providing instant query availability for newly landed partitions.
+  * **HCL Escaping for Athena Templates:** In Hive storage location templates (`${year}`), Terraform attempts variable interpolation unless escaped with `$$` (`$${year}`), a common IaC pitfall.
+  * **Glue Database Naming Restrictions:** AWS Glue rejects database names containing hyphens (`-`), requiring programmatic replacement to underscores (`_`).
+  * **Data Lake Query Economics:** Querying columnar Snappy Parquet with partition pruning scanned less than 5 KB of data across all tests, resulting in sub-millicent query costs while executing in under 1 second.
+* **TODO:** Implement GitHub Actions CI/CD workflow (`.github/workflows/ci.yml`) for automated linting, unit testing, and Terraform validation, and configure automated orchestration triggers.

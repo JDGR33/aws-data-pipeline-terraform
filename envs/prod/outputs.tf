@@ -144,3 +144,27 @@ output "glue_script_s3_uri" {
   description = "The S3 URI of the PySpark ETL script."
   value       = module.glue.script_s3_uri
 }
+
+# ---
+# Amazon Athena & Glue Data Catalog
+# ---
+
+output "athena_database_name" {
+  description = "The name of the AWS Glue Catalog database."
+  value       = module.athena.database_name
+}
+
+output "athena_workgroup_name" {
+  description = "The name of the Amazon Athena workgroup."
+  value       = module.athena.workgroup_name
+}
+
+output "athena_results_s3_uri" {
+  description = "The S3 URI where Athena stores query execution results."
+  value       = module.athena.query_results_s3_uri
+}
+
+output "athena_table_names" {
+  description = "The list of external table names registered in the Glue Catalog."
+  value       = module.athena.table_names
+}

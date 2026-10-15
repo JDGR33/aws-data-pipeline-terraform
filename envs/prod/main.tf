@@ -137,3 +137,19 @@ module "glue" {
     ManagedBy   = "Terraform"
   }
 }
+
+module "athena" {
+  source = "../../modules/athena"
+
+  database_name       = replace("${var.project_name}_${var.environment}_db", "-", "_")
+  workgroup_name      = "${var.project_name}-${var.environment}"
+  silver_bucket_id    = module.s3_silver.bucket_id
+  artifacts_bucket_id = module.s3_artifacts.bucket_id
+  kms_key_arn         = module.kms.key_arn
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+    ManagedBy   = "Terraform"
+  }
+}

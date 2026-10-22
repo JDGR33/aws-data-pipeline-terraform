@@ -385,3 +385,15 @@ The next project stage is the raw-zone processing contract: read these objects f
   * Applied to AWS (`+1 resource created`), verified live trigger state `ACTIVATED` via `aws glue get-trigger`.
   * Closes the autonomous pipeline loop: Public APIs -> Lambda (Bronze) -> Glue Trigger (Silver Parquet) -> Athena (SQL Serving).
 * **TODO:** Implement GitHub Actions CI/CD workflow (`.github/workflows/ci.yml`) for automated linting, unit testing, and Terraform validation, and polish documentation.
+
+## 2026-10-15 to 2026-10-21 - GitHub Actions CI/CD, Full-Year Athena Visualizations, & AWS Architecture Diagram
+* **GitHub Actions CI/CD Pipeline (`.github/workflows/ci.yml`):**
+  * Configured automated workflow triggering on push and pull requests to `main`.
+  * Enforced Python 3.12 syntax compilation (`py_compile`), PEP 8 linting (`flake8`), 10 unit tests (`unittest`), automated Lambda ZIP artifact packaging (`scripts/package_lambda.py`), and Terraform formatting/validation (`terraform fmt -check -recursive`, `terraform validate`).
+* **Full-Year 2026 Athena Analytical Visualizations (`scripts/generate_athena_visuals.py`):**
+  * Built automated Presto/Trino SQL query and Matplotlib visualization script querying the live S3 Silver Parquet data lake (~58,000+ records across Jan–Oct 2026) via Amazon Athena (`texas_data_pipeline_prod_db`).
+  * Resolved UTC (`EIA`) vs. `America/Chicago` (`Open-Meteo`) timestamp alignment in Trino using `with_timezone(period, 'UTC')` and `at_timezone(..., 'America/Chicago')` to handle CST/CDT daylight saving transitions accurately.
+  * Generated 7 publication-ready analytical charts in `docs/images/01..07_*.png` covering daily demand vs. temperature, hourly hockey-stick scatter, month $\times$ hour heatmap, weekly generation mix, summer duck curve & battery arbitrage, solar vs. irradiance correlation, and retail electricity prices by sector.
+* **AWS Architecture Diagram & Documentation Polish (`README.md`, `internal_README.md`):**
+  * Created official AWS architecture diagram (`docs/images/aws_architecture.png`) illustrating the end-to-end flow (`SOURCES`: U.S. EIA API v2 & Open-Meteo Weather API $\rightarrow$ `AWS Lambda` $\rightarrow$ `Amazon S3 Bronze` $\rightarrow$ `AWS Glue` $\rightarrow$ `Amazon S3 Silver` $\rightarrow$ `Metadata & Querying`: AWS Glue Data Catalog & Amazon Athena) and cross-cutting operational pillars (`Scheduling & Orchestration`: Amazon EventBridge, `Encryption & Key Management`: AWS KMS, and `Logging & Error Handling`: Amazon CloudWatch).
+  * Embedded the architecture diagram and 7 Athena analytical charts into `README.md` and `internal_README.md`.

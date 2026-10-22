@@ -50,6 +50,8 @@ terraform.rc
 internal_README.md
 data/raw/
 data/*.csv
+response.json
+**/response.json
 
 ## For Terraform
 .terraform/

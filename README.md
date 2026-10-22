@@ -127,8 +127,7 @@ aws-data-pipeline-terraform/
 │   └── test_collector.py        # Python unit test suite (Mocks, retries, checksums)
 ├── docs/
 │   └── images/                  # AWS architecture diagram & Athena analytical charts
-├── log_book.md                  # Comprehensive chronological engineering journal
-└── internal_README.md           # Engineering roadmap & sprint milestones
+└── log_book.md                  # Comprehensive chronological engineering journal
 ```
 
 ---
@@ -194,7 +193,6 @@ AWS_PROFILE=dev RAW_BUCKET=texas-data-pipeline-prod-bronze DESTINATION=s3 START_
 
 ## 📜 Engineering Journal & Documentation
 * **Chronological Engineering Log:** See [`log_book.md`](log_book.md) for detailed daily entries, architectural decisions, and troubleshooting war stories.
-* **[Note to Self] Internal Roadmap & Architecture Notes:** See [`internal_README.md`](internal_README.md) for sprint milestones and local testing commands.
 
 ---
 

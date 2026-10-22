@@ -282,9 +282,9 @@ The next project stage is the raw-zone processing contract: read these objects f
   * Determined that AWS Glue (Jobs, Crawlers, and Catalog) is unsupported under LocalStack Community Edition (`InternalFailure: glue service is not included within your LocalStack license`).
   * Implemented an enterprise multi-environment pattern: preserved `envs/dev` configured for LocalStack mock testing and created `envs/prod` targeting native AWS infrastructure.
 * **AWS IAM Identity Center (SSO) Integration:**
-  * Configured AWS IAM Identity Center with administrative user (`dev-admin`), permission set (`AdministratorAccess`), and account assignment (`605134438346`).
+  * Configured AWS IAM Identity Center with administrative user (`dev-admin`), permission set (`AdministratorAccess`), and account assignment (`<AWS_ACCOUNT_ID>`).
   * Configured local AWS CLI SSO session via `aws configure sso` generating profile `dev` linked to `sso-session my-sso`.
-  * Verified STS identity resolution: `arn:aws:sts::605134438346:assumed-role/AWSReservedSSO_AdministratorAccess_95bbb9fa8381196a/dev-admin`.
+  * Verified STS identity resolution: `arn:aws:sts::<AWS_ACCOUNT_ID>:assumed-role/AWSReservedSSO_AdministratorAccess_<ROLE_ID>/dev-admin`.
 * **Created Production Environment Stack (`envs/prod`):**
   * `versions.tf`: Pinned Terraform `>= 1.5.0` and AWS provider `>= 5.0`.
   * `providers.tf`: Configured native AWS provider referencing `profile = var.aws_profile` (`dev`) and default resource tags (`Environment = prod`, `Project = texas-data-pipeline`, `ManagedBy = Terraform`), removing all LocalStack mock endpoints and hardcoded dummy credentials.
@@ -327,7 +327,7 @@ The next project stage is the raw-zone processing contract: read these objects f
 * **Prod Environment Integration & Execution Planning (`envs/prod`):**
   * Wired `module.s3_artifacts` and `module.glue` into `envs/prod/main.tf` with outputs exported in `envs/prod/outputs.tf`.
   * Verified HCL validity via `terraform validate` ("Success! The configuration is valid.").
-  * Executed live `terraform plan` against AWS account `605134438346`, verifying clean plan adding 10 resources (`+10 to add, 0 to change, 0 to destroy`).
+  * Executed live `terraform plan` against AWS account `<AWS_ACCOUNT_ID>`, verifying clean plan adding 10 resources (`+10 to add, 0 to change, 0 to destroy`).
 * **Engineering Deep-Dive & Lessons Learned: S3 Object KMS Encryption & Terraform ETag Conflicts:**
   * **ETag vs. KMS in `aws_s3_object`:** In AWS S3, objects encrypted with customer-managed KMS keys do not report an ETag matching the MD5 of plaintext content. Specifying `etag = filemd5(...)` alongside `kms_key_id` triggers a Terraform provider conflict error (`"etag": conflicts with kms_key_id`). The correct pattern is `source_hash = filemd5(...)`, which tracks local file modifications without interfering with S3 server-side encryption.
   * **Data Lake Separation of Concerns:** Application scripts and Lambda packages must never reside in data partitions. Keeping an independent artifacts bucket ensures that data retention lifecycle policies (e.g. deleting or Glacier-transitioning raw Bronze files) never inadvertently corrupt or delete executable deployment code.
